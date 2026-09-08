@@ -430,7 +430,7 @@ function primaryModel(row, index = 0) {
 
 function tokenFields(row) {
   const inputTokens = integer(row.inputTokens ?? row.input_tokens ?? row.input);
-  const outputTokens = integer(row.outputTokens ?? row.output_tokens ?? row.output);
+  let outputTokens = integer(row.outputTokens ?? row.output_tokens ?? row.output);
   const cacheCreationTokens = integer(
     row.cacheCreationTokens
     ?? row.cacheCreationInputTokens
@@ -451,6 +451,10 @@ function tokenFields(row) {
     ?? row.metadata?.reasoningOutputTokens
   );
   const explicitTotal = integer(row.totalTokens ?? row.total_tokens);
+  const inclusiveTotal = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
+  if (reasoningOutputTokens > 0 && reasoningOutputTokens <= outputTokens && explicitTotal === inclusiveTotal) {
+    outputTokens -= reasoningOutputTokens;
+  }
   const computedTotal = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + reasoningOutputTokens;
   return {
     inputTokens,

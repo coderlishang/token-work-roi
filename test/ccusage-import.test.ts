@@ -160,7 +160,8 @@ Ok to proceed? (y)
   assert.equal(plan.daily[0].usageDate, '2026-06-01');
   assert.equal(plan.sessions[0].sessionId, '2026/05/22/rollout-test');
   assert.equal(plan.tokenEvents[0].reasoningTokens, 5);
-  assert.equal(plan.daily[0].totalTokens, 155);
+  assert.equal(plan.tokenEvents[0].outputTokens, 15);
+  assert.equal(plan.daily[0].totalTokens, 150);
 });
 
 test('ccusage apply is idempotent and dry-run plans do not write', () => {

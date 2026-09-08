@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import type { ProcessResult } from '../test-support/process.ts';
 import { localDateFromTimestamp } from '../src/collectors/utils.ts';
+import { calculateCost } from '../src/pricing.ts';
 
 interface CollectSourceSummary {
   id: string;
@@ -15,6 +16,7 @@ interface CollectSourceSummary {
   usableTokenRecords: number;
   sessionRows: number;
   tokenEvents: number;
+  eventTotalTokens: number;
   coverageRisk: string;
   reconciliation: {
     dailyVsEventDiffPct: number;
@@ -99,6 +101,7 @@ test('collect dry-run scans fixtures and does not write SQLite', async () => {
     assert.equal(byId.get('claude').coverageRisk, 'trusted-event-level');
     assert.equal(byId.get('codex').candidateFiles, 1);
     assert.equal(byId.get('codex').usableTokenRecords, 2);
+    assert.equal(byId.get('codex').eventTotalTokens, 150);
     assert.equal(byId.get('codex').coverageRisk, 'trusted-event-level');
     assert.equal(byId.get('cursor').candidateFiles, 1);
     assert.equal(byId.get('cursor').usableTokenRecords, 1);
@@ -106,6 +109,98 @@ test('collect dry-run scans fixtures and does not write SQLite', async () => {
     assert.ok(summary.totals.tokenEvents >= 4);
     assert.equal(summary.totals.dailyTotalTokens, summary.totals.sessionTotalTokens);
     assert.equal(summary.totals.sessionTotalTokens, summary.totals.eventTotalTokens);
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+test('Codex reasoning is a subset of output and historical rows are repaired once', async () => {
+  const fixture = createCollectorFixture();
+  const command = ['src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'];
+  try {
+    let result = await runNode(command, fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+    const db = new DatabaseSync(fixture.dbPath);
+    const nativeCost = Number(db.prepare("SELECT SUM(cost_usd) cost FROM daily_usage WHERE source LIKE 'Codex%'").get().cost);
+    for (const row of db.prepare(`
+      SELECT device, source, session_id AS sessionId, date(timestamp, '+8 hours') AS usageDate,
+        model, reasoning_tokens AS reasoningTokens
+      FROM token_events WHERE event_id LIKE 'codex:%' AND reasoning_tokens > 0
+    `).all()) {
+      const duplicateCost = calculateCost(row.model, { reasoning: row.reasoningTokens });
+      db.prepare(`UPDATE daily_usage SET cost_usd = cost_usd + ?
+        WHERE device = ? AND source = ? AND usage_date = ? AND model = ?`)
+        .run(duplicateCost, row.device, row.source, row.usageDate, row.model);
+      db.prepare(`UPDATE session_usage SET cost_usd = cost_usd + ?
+        WHERE device = ? AND source = ? AND session_id = ?`)
+        .run(duplicateCost, row.device, row.source, row.sessionId);
+    }
+    db.exec(`
+      UPDATE token_events SET output_tokens = output_tokens + reasoning_tokens WHERE event_id LIKE 'codex:%';
+      UPDATE daily_usage SET output_tokens = output_tokens + reasoning_output_tokens,
+        total_tokens = total_tokens + reasoning_output_tokens WHERE source LIKE 'Codex%';
+      UPDATE session_usage SET output_tokens = output_tokens + reasoning_output_tokens,
+        total_tokens = total_tokens + reasoning_output_tokens WHERE source LIKE 'Codex%';
+    `);
+    const omittedEvent = db.prepare("SELECT event_id AS eventId FROM token_events WHERE event_id LIKE 'codex:%' LIMIT 1").get();
+    db.prepare('DELETE FROM token_events WHERE event_id = ?').run(omittedEvent.eventId);
+    const staleEvent = db.prepare(`SELECT event_id AS eventId, device, source, session_id AS sessionId,
+      date(timestamp, '+8 hours') AS usageDate, model FROM token_events
+      WHERE event_id LIKE 'codex:%' LIMIT 1`).get();
+    db.prepare('UPDATE token_events SET output_tokens = output_tokens + 7 WHERE event_id = ?').run(staleEvent.eventId);
+    db.prepare(`UPDATE daily_usage SET output_tokens = output_tokens + 7, total_tokens = total_tokens + 7
+      WHERE device = ? AND source = ? AND usage_date = ? AND model = ?`)
+      .run(staleEvent.device, staleEvent.source, staleEvent.usageDate, staleEvent.model);
+    db.prepare(`UPDATE session_usage SET output_tokens = output_tokens + 7, total_tokens = total_tokens + 7
+      WHERE device = ? AND source = ? AND session_id = ?`)
+      .run(staleEvent.device, staleEvent.source, staleEvent.sessionId);
+    const importedTokens = { input: 100, output: 15, cacheRead: 30, reasoning: 5 };
+    const importedCost = calculateCost('gpt-5.5', importedTokens);
+    const legacyImportedCost = importedCost + calculateCost('gpt-5.5', { reasoning: 5 });
+    db.prepare(`INSERT INTO token_events (event_id, device, source, session_id, timestamp, model,
+      input_tokens, output_tokens, cache_read_tokens, reasoning_tokens)
+      VALUES ('ccusage:legacy-reasoning', ?, 'Codex Desktop', 'imported-session', '2026-06-17T02:00:00Z',
+        'gpt-5.5', 100, 20, 30, 5)`).run(hostname());
+    db.prepare(`INSERT INTO daily_usage (device, source, usage_date, model, input_tokens, output_tokens,
+      cache_read_tokens, reasoning_output_tokens, total_tokens, cost_usd)
+      VALUES (?, 'Codex Desktop', '2026-06-17', 'gpt-5.5', 100, 20, 30, 5, 155, ?)`).run(hostname(), legacyImportedCost);
+    db.prepare(`INSERT INTO session_usage (device, source, session_id, last_activity, model, input_tokens,
+      output_tokens, cache_read_tokens, reasoning_output_tokens, total_tokens, cost_usd)
+      VALUES (?, 'Codex Desktop', 'imported-session', '2026-06-17T02:00:00Z', 'gpt-5.5',
+        100, 20, 30, 5, 155, ?)`).run(hostname(), legacyImportedCost);
+    db.exec('PRAGMA user_version = 0');
+    db.close();
+    const expectedCost = nativeCost + importedCost;
+
+    const scheduledEnv = {
+      ...fixture.env,
+      TOKEN_WORK_COLLECT_REASON: 'scheduled',
+      TOKEN_WORK_SCHEDULED_INCREMENTAL: '1'
+    };
+    result = await runNode(command, scheduledEnv);
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(JSON.parse(result.stdout).backup?.fileName || '', /scheduled-collect-repair/);
+    const repaired = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      const eventTotal = repaired.prepare(`SELECT SUM(input_tokens + output_tokens + cache_read_tokens
+        + cache_creation_tokens + reasoning_tokens) total FROM token_events
+        WHERE event_id LIKE 'codex:%' OR event_id LIKE 'ccusage:%'`).get().total;
+      assert.equal(eventTotal, 300);
+      for (const table of ['daily_usage', 'session_usage']) {
+        const row = repaired.prepare(`SELECT SUM(total_tokens) total, SUM(cost_usd) cost
+          FROM ${table} WHERE source LIKE 'Codex%'`).get();
+        assert.equal(row.total, 300);
+        assert.ok(Math.abs(Number(row.cost) - expectedCost) < 1e-12);
+      }
+      assert.equal(repaired.prepare('PRAGMA user_version').get().user_version, 4);
+      assert.ok(repaired.prepare('SELECT 1 FROM token_events WHERE event_id = ?').get(omittedEvent.eventId));
+    } finally {
+      repaired.close();
+    }
+
+    result = await runNode(command, scheduledEnv);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).backup, null);
   } finally {
     cleanupFixture(fixture);
   }
@@ -494,7 +589,7 @@ test('collect reclassifies legacy Codex records when session metadata identifies
         FROM daily_usage
         WHERE source LIKE 'Codex%'
         GROUP BY source
-      `).all().map(row => ({ ...row })), [{ source: 'Codex Desktop', totalTokens: 155 }]);
+      `).all().map(row => ({ ...row })), [{ source: 'Codex Desktop', totalTokens: 150 }]);
     } finally {
       db.close();
     }
@@ -886,7 +981,7 @@ test('scheduled Codex collection reclassifies a session without duplicating its 
         FROM daily_usage
         WHERE source LIKE 'Codex%'
         GROUP BY source
-      `).all().map(row => ({ ...row })), [{ source: 'Codex Desktop', totalTokens: 155 }]);
+      `).all().map(row => ({ ...row })), [{ source: 'Codex Desktop', totalTokens: 150 }]);
       assert.equal(db.prepare(`
         SELECT COUNT(*) AS count FROM token_events WHERE source = 'Codex CLI'
       `).get().count, 0);
@@ -934,7 +1029,7 @@ test('scheduled Codex collection preserves history after local session logs are 
       assert.equal(repaired.prepare(`
         SELECT total_tokens AS totalTokens FROM daily_usage
         WHERE source = 'Codex (unidentified client)' AND model = 'gpt-5.4-mini'
-      `).get().totalTokens, 52);
+      `).get().totalTokens, 50);
     } finally {
       repaired.close();
     }
@@ -1284,8 +1379,8 @@ test('collect apply writes temp SQLite with backup and before/after counts', asy
         ORDER BY model
       `).all();
       assert.deepEqual(codexSessions.map(row => [row.model, row.totalTokens]), [
-        ['gpt-5.3-codex', 103],
-        ['gpt-5.4-mini', 52]
+        ['gpt-5.3-codex', 100],
+        ['gpt-5.4-mini', 50]
       ]);
       const claudeSessions = db.prepare(`
         SELECT model, total_tokens AS totalTokens
