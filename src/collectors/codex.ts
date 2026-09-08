@@ -119,16 +119,17 @@ function usageSummary(u) {
 
 /**
  * Convert a Codex cumulative summary to our token breakdown.
- * cached is clamped to <= input to avoid inflated totals.
+ * Cached input and reasoning are subsets of input and output respectively.
  */
 function summaryToTokens(s) {
-  const clamped = Math.min(s.cached, s.input);
+  const cached = Math.min(s.cached, s.input);
+  const reasoning = Math.min(s.reasoning, s.output);
   return {
-    input:     Math.max(0, s.input - clamped),
-    output:    s.output,
-    cacheRead:  clamped,
+    input:     Math.max(0, s.input - cached),
+    output:    Math.max(0, s.output - reasoning),
+    cacheRead: cached,
     cacheWrite: 0,
-    reasoning:  s.reasoning
+    reasoning
   };
 }
 

@@ -13,6 +13,10 @@ type InputRecord = Record<string, unknown>;
 const LEGACY_CODEX_SOURCE = 'Codex CLI';
 const UNKNOWN_CODEX_SOURCE = 'Codex (unidentified client)';
 const SCHEDULED_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const CODEX_NATIVE_REASONING_VERSION = 1;
+const CODEX_CCUSAGE_REASONING_VERSION = 2;
+const CODEX_CLASSIFIED_CCUSAGE_REASONING_VERSION = 3;
+const CODEX_ACCOUNTING_VERSION = 4;
 
 interface CollectArgs {
   [key: string]: string | boolean | undefined;
@@ -108,6 +112,9 @@ async function main() {
     if (mode === 'apply') {
       collectionLock = acquireCollectionLock(args.db);
       db = openDb(args.db);
+      if (enabled.has('codex') && codexAccountingUpgradeNeeded(db)) {
+        fullRefreshSources.add('codex');
+      }
       summary.before = countRows(db);
     }
     await collectLocal({
@@ -336,6 +343,9 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
   }
 
   const needsStoredUsageRepair = mode === 'apply' && db && usageTotalsNeedRepair(db);
+  const needsCodexAccountingUpgrade = mode === 'apply' && db
+    && payloads.some(payload => payload.type === 'data' && payload.sourceSummary.id === 'codex')
+    && codexAccountingUpgradeNeeded(db);
   if (mode === 'apply' && db) {
     const hasClaudePlaceholders = !incrementalRefresh && payloads.some(payload => payload.type === 'data'
       && payload.sourceSummary.candidateFiles > 0
@@ -351,7 +361,9 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
       || workBuddyEventModelsWouldChange(db, payload)
       || codeBuddyEventModelsWouldChange(db, payload)
     );
-    const protectedMutation = needsStoredUsageRepair || hasClaudePlaceholders
+    const protectedMutation = needsStoredUsageRepair
+      || (needsCodexAccountingUpgrade && codexAccountingUpgradeChangesUsage(db))
+      || hasClaudePlaceholders
       || hasCodexMigration || deletesStoredUsage || rebuildsEventUsage;
     const shouldBackup = protectedMutation || tokenUsageWouldChange(db, payloads);
     summary.backup = shouldBackup
@@ -364,6 +376,9 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
   }
 
   if (mode === 'apply' && db) {
+    if (needsCodexAccountingUpgrade) {
+      runInTransaction(db, () => repairCodexReasoningAccounting(db, pricingData));
+    }
     for (const payload of payloads) {
       if (!incrementalRefresh && payload.type === 'data'
         && payload.sourceSummary.candidateFiles > 0 && payload.sourceSummary.id === 'claude') {
@@ -430,10 +445,108 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
           rebuildNativeEventUsage(db, payload, pricingData);
         }
         recordCollectionRun(db, run, scheduled);
+        if (needsCodexAccountingUpgrade && sourceSummary.id === 'codex'
+          && sourceSummary.candidateFiles > 0) {
+          db.exec(`PRAGMA user_version = ${CODEX_ACCOUNTING_VERSION}`);
+        }
       });
       exportPayload.runs.push(run);
     }
   }
+}
+
+function codexAccountingUpgradeNeeded(db) {
+  return codexAccountingVersion(db) < CODEX_ACCOUNTING_VERSION;
+}
+
+function codexAccountingUpgradeChangesUsage(db) {
+  const version = codexAccountingVersion(db);
+  return version < CODEX_NATIVE_REASONING_VERSION && hasReasoningEvents(db, "event_id LIKE 'codex:%'")
+    || version < CODEX_CCUSAGE_REASONING_VERSION
+      && hasReasoningEvents(db, "event_id LIKE 'ccusage:%' AND source = 'Codex'")
+    || version < CODEX_CLASSIFIED_CCUSAGE_REASONING_VERSION
+      && hasReasoningEvents(db, `event_id LIKE 'ccusage:%'
+        AND source IN ('Codex CLI', 'Codex Desktop', 'Codex (unidentified client)', 'codex')`);
+}
+
+function repairCodexReasoningAccounting(db, pricingData) {
+  const version = codexAccountingVersion(db);
+  const events = [];
+  if (version < CODEX_NATIVE_REASONING_VERSION) {
+    events.push(...reasoningEvents(db, "event_id LIKE 'codex:%'"));
+  }
+  if (version < CODEX_CCUSAGE_REASONING_VERSION) {
+    events.push(...reasoningEvents(db, "event_id LIKE 'ccusage:%' AND source = 'Codex'"));
+  }
+  if (version < CODEX_CLASSIFIED_CCUSAGE_REASONING_VERSION) {
+    events.push(...reasoningEvents(db, `event_id LIKE 'ccusage:%'
+      AND source IN ('Codex CLI', 'Codex Desktop', 'Codex (unidentified client)', 'codex')`));
+  }
+  const daily = new Map();
+  const sessions = new Map();
+  for (const row of events) {
+    const correction = Number(row.correction || 0);
+    if (!correction) continue;
+    const cost = calculateCost(row.model, { reasoning: correction }, pricingData);
+    addCorrection(daily, [row.device, row.source, row.usageDate, row.model], correction, cost);
+    addCorrection(sessions, [row.device, row.source, row.sessionId], correction, cost);
+  }
+
+  const updateEvent = db.prepare(`
+    UPDATE token_events
+    SET output_tokens = MAX(0, output_tokens - reasoning_tokens), updated_at = datetime('now')
+    WHERE event_id = ?
+  `);
+  for (const row of events) updateEvent.run(row.eventId);
+
+  const updateDaily = db.prepare(`
+    UPDATE daily_usage
+    SET output_tokens = MAX(0, output_tokens - ?),
+      total_tokens = MAX(0, total_tokens - ?), cost_usd = MAX(0, cost_usd - ?),
+      updated_at = datetime('now')
+    WHERE device = ? AND source = ? AND usage_date = ? AND model = ?
+  `);
+  for (const row of daily.values()) {
+    updateDaily.run(row.tokens, row.tokens, row.cost, ...row.key);
+  }
+
+  const updateSession = db.prepare(`
+    UPDATE session_usage
+    SET output_tokens = MAX(0, output_tokens - ?),
+      total_tokens = MAX(0, total_tokens - ?), cost_usd = MAX(0, cost_usd - ?),
+      updated_at = datetime('now')
+    WHERE device = ? AND source = ? AND session_id = ?
+  `);
+  for (const row of sessions.values()) {
+    updateSession.run(row.tokens, row.tokens, row.cost, ...row.key);
+  }
+  db.exec(`PRAGMA user_version = ${CODEX_CLASSIFIED_CCUSAGE_REASONING_VERSION}`);
+}
+
+function codexAccountingVersion(db) {
+  return Number(db.prepare('PRAGMA user_version').get()?.user_version || 0);
+}
+
+function hasReasoningEvents(db, where) {
+  return Boolean(db.prepare(`SELECT 1 FROM token_events WHERE ${where} AND reasoning_tokens > 0 LIMIT 1`).get());
+}
+
+function reasoningEvents(db, where) {
+  return db.prepare(`
+    SELECT event_id AS eventId, device, source, session_id AS sessionId,
+      date(timestamp, '+8 hours') AS usageDate, model,
+      MIN(output_tokens, reasoning_tokens) AS correction
+    FROM token_events
+    WHERE ${where} AND reasoning_tokens > 0
+  `).all();
+}
+
+function addCorrection(target, key, tokens, cost) {
+  const id = JSON.stringify(key);
+  const row = target.get(id) || { key, tokens: 0, cost: 0 };
+  row.tokens += tokens;
+  row.cost += cost;
+  target.set(id, row);
 }
 
 function storedUsageWouldBeDeleted(db, payloads) {
@@ -1219,10 +1332,10 @@ function mergeHistoricalEventUsage(db, payload, pricingData) {
   }
 }
 
-function replacedWorkBuddyEventIds(payload) {
-  return JSON.stringify(payload.sourceSummary.id === 'workbuddy'
-    ? payload.eventRows.flatMap(row => [row.eventId, ...row.legacyEventIds])
-    : []);
+function refreshedEventIds(payload, source) {
+  return JSON.stringify(payload.eventRows
+    .filter(row => row.source === source)
+    .flatMap(row => [row.eventId, ...row.legacyEventIds]));
 }
 
 function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
@@ -1248,13 +1361,8 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
     WHERE device = ? AND source = ? AND event_id LIKE ? ESCAPE '\\'
       AND event_id NOT IN (SELECT value FROM json_each(?))
     GROUP BY session_id, usageDate, model
-  `).all(payload.device, source, sqlLikePrefix(eventIdPrefix), replacedWorkBuddyEventIds(payload))
+  `).all(payload.device, source, sqlLikePrefix(eventIdPrefix), refreshedEventIds(payload, source))
     .filter(row => !replacesChangedSessions || !isCurrentSession(row.sessionId));
-  const eventExists = db.prepare(`
-    SELECT 1 FROM token_events
-    WHERE event_id = ? AND device = ? AND source = ?
-    LIMIT 1
-  `);
   const projectPaths = new Map(payload.sessionRows
     .filter(row => row.source === source)
     .map(row => [row.sessionId, row.projectPath || null]));
@@ -1287,7 +1395,6 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
   }
   for (const row of payload.eventRows) {
     if (row.source !== source) continue;
-    if (!replacesChangedSessions && eventExists.get(row.eventId, row.device, row.source)) continue;
     addEvent({
       sessionId: row.sessionId,
       usageDate: localDateFromTimestamp(row.timestamp),
@@ -1327,7 +1434,7 @@ function mergeHistoricalEventUsageForSource(db, payload, source, pricingData) {
     WHERE device = ? AND source = ? AND event_id LIKE ? ESCAPE '\\'
       AND event_id NOT IN (SELECT value FROM json_each(?))
     GROUP BY session_id, usageDate, model
-  `).all(payload.device, source, sqlLikePrefix(eventIdPrefix), replacedWorkBuddyEventIds(payload))
+  `).all(payload.device, source, sqlLikePrefix(eventIdPrefix), refreshedEventIds(payload, source))
     .filter(row => !currentPrefixes.some(prefix => row.sessionId.startsWith(prefix))
       && !currentSessionIds.includes(row.sessionId));
   if (!historicalRows.length) return;
