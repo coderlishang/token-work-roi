@@ -354,7 +354,8 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
     const hasCodexMigration = payloads.some(payload => payload.type === 'data'
       && payload.sourceSummary.candidateFiles > 0
       && payload.sourceSummary.id === 'codex'
-      && codexSourceMigrationWouldChange(db, payload));
+      && (codexSourceMigrationWouldChange(db, payload)
+        || (!payload.incremental && hasOrphanedUnknownCodexSessions(db, payload.device))));
     const deletesStoredUsage = storedUsageWouldBeDeleted(db, payloads);
     const rebuildsEventUsage = payloads.some(payload =>
       workBuddyLegacyEventCopies(db, payload).length > 0
@@ -388,6 +389,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
         && payload.sourceSummary.id === 'codex') {
         runInTransaction(db, () => {
           migrateLegacyCodexClientSources(db, payload);
+          if (!payload.incremental) removeOrphanedUnknownCodexSessions(db, payload.device);
         });
       }
     }
@@ -912,6 +914,46 @@ function migrateLegacyCodexClientSources(db, payload) {
   `).run(LEGACY_CODEX_SOURCE);
 }
 
+function hasOrphanedUnknownCodexSessions(db, device) {
+  return Boolean(db.prepare(`
+    SELECT 1
+    FROM session_usage AS session
+    WHERE session.device = ? AND session.source LIKE 'Codex%' AND session.model = 'unknown'
+      AND session.input_tokens = 0 AND session.output_tokens = 0
+      AND session.cache_creation_tokens = 0 AND session.cache_read_tokens = 0
+      AND session.cached_input_tokens = 0 AND session.reasoning_output_tokens = 0
+      AND session.total_tokens = 0 AND session.cost_usd = 0
+      AND NOT EXISTS (SELECT 1 FROM token_events AS event
+        WHERE event.device = session.device AND event.source = session.source AND event.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM session_annotations AS annotation
+        WHERE annotation.device = session.device AND annotation.source = session.source AND annotation.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM session_outputs AS output
+        WHERE output.device = session.device AND output.source = session.source AND output.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM work_item_sessions AS link
+        WHERE link.device = session.device AND link.source = session.source AND link.session_id = session.session_id)
+    LIMIT 1
+  `).get(device));
+}
+
+function removeOrphanedUnknownCodexSessions(db, device) {
+  db.prepare(`
+    DELETE FROM session_usage AS session
+    WHERE session.device = ? AND session.source LIKE 'Codex%' AND session.model = 'unknown'
+      AND session.input_tokens = 0 AND session.output_tokens = 0
+      AND session.cache_creation_tokens = 0 AND session.cache_read_tokens = 0
+      AND session.cached_input_tokens = 0 AND session.reasoning_output_tokens = 0
+      AND session.total_tokens = 0 AND session.cost_usd = 0
+      AND NOT EXISTS (SELECT 1 FROM token_events AS event
+        WHERE event.device = session.device AND event.source = session.source AND event.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM session_annotations AS annotation
+        WHERE annotation.device = session.device AND annotation.source = session.source AND annotation.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM session_outputs AS output
+        WHERE output.device = session.device AND output.source = session.source AND output.session_id = session.session_id)
+      AND NOT EXISTS (SELECT 1 FROM work_item_sessions AS link
+        WHERE link.device = session.device AND link.source = session.source AND link.session_id = session.session_id)
+  `).run(device);
+}
+
 function codexSourceMigrationWouldChange(db, payload) {
   const eventSources = new Map(payload.eventRows
     .filter(row => row.sessionId.startsWith('local:codex:'))
@@ -1233,6 +1275,9 @@ function eventReconciliationPlan(db, payload, source) {
     };
   }
   const prefixes = normalizedEventSessionPrefixes(payload.reconciliation);
+  const replayedForkPrefixes = normalizedEventSessionPrefixes({
+    eventSessionPrefixes: payload.reconciliation?.replayedForkSessionPrefixes
+  });
   const managedEventIdPrefix = normalizedReconciliationPrefix(payload.reconciliation?.managedEventIdPrefix);
   const managedEventSessionPrefixes = normalizedEventSessionPrefixes({
     eventSessionPrefixes: payload.reconciliation?.managedEventSessionPrefixes
@@ -1252,6 +1297,12 @@ function eventReconciliationPlan(db, payload, source) {
     SELECT event_id AS eventId, date(timestamp, '+8 hours') AS usageDate
     FROM token_events
     WHERE device = ? AND source = ? AND session_id LIKE ? ESCAPE '\\'
+  `);
+  const selectNonZeroSessions = db.prepare(`
+    SELECT session_id AS sessionId
+    FROM session_usage
+    WHERE device = ? AND source = ? AND session_id LIKE ? ESCAPE '\\'
+      AND total_tokens > 0
   `);
   const stalePrefixes = [];
   const dates = new Set();
@@ -1304,6 +1355,12 @@ function eventReconciliationPlan(db, payload, source) {
     stalePrefixes.push(prefix);
     for (const row of existing) {
       if (row.usageDate) dates.add(row.usageDate);
+    }
+  }
+  for (const prefix of replayedForkPrefixes) {
+    if (stalePrefixes.includes(prefix)) continue;
+    if (selectNonZeroSessions.all(device, source, sqlLikePrefix(prefix)).length > 0) {
+      stalePrefixes.push(prefix);
     }
   }
   return {

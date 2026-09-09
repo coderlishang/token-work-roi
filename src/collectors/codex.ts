@@ -171,9 +171,12 @@ function summaryAtLeast(current, baseline) {
  * Returns an array of { timestamp, date, model, workspace, source, tokens }.
  */
 async function parseSessionFile(filePath, sessionId, inheritedTotal = null, minimumTimestamp = null, options: SessionParseOptions = {}) {
+  const events = [];
+  let sawTokenCount = false;
+  let complete = true;
   const tailBytes = Number(options.tailBytes) || 0;
   const text = tailBytes > 0 ? await readSessionTail(filePath, tailBytes) : null;
-  if (tailBytes > 0 && text == null) return [];
+  if (tailBytes > 0 && text == null) return { events, sawTokenCount, complete: false };
 
   // Per-file state
   let currentModel     = null;
@@ -183,7 +186,6 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
   let metaSessionId    = options.sessionId || sessionId;
   let source           = options.source || CODEX_UNKNOWN_SOURCE;
 
-  const events = [];
   const recordOccurrences = new Map();
   const minimumTime = minimumTimestamp ? new Date(minimumTimestamp).getTime() : null;
 
@@ -194,7 +196,10 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
       if (!isRelevantSessionLine(line)) continue;
 
       let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
+      try { entry = JSON.parse(line); } catch {
+        complete = false;
+        continue;
+      }
 
       const type = entry.type;
 
@@ -216,10 +221,19 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
         continue;
       }
 
+      // Codex Desktop writes the selected model in this event before the
+      // first turn_context is emitted. It is the same session-level setting,
+      // so retain it as the current model for following token counters.
+      if (type === 'event_msg' && entry.payload?.type === 'thread_settings_applied') {
+        currentModel = extractModel(entry.payload.thread_settings) || currentModel;
+        continue;
+      }
+
       // ── event_msg / token_count ────────────────────────────────────────
       if (type === 'event_msg') {
         const payload = entry.payload || {};
         if (payload.type !== 'token_count') continue;
+        sawTokenCount = true;
 
         const info = payload.info || {};
 
@@ -286,16 +300,18 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
       }
     }
   } catch {
-    return [];
+    return { events: [], sawTokenCount: false, complete: false };
   }
 
-  return events;
+  return { events, sawTokenCount, complete };
 }
 
 function isRelevantSessionLine(line) {
   if (!line) return false;
   if (line.includes('"session_meta"') || line.includes('"turn_context"')) return true;
-  return line.includes('"event_msg"') && line.includes('"token_count"');
+  return line.includes('"event_msg"') && (
+    line.includes('"token_count"') || line.includes('"thread_settings_applied"')
+  );
 }
 
 async function* streamSessionLines(filePath) {
@@ -356,6 +372,7 @@ function collectFromSessionFiles(sessionFiles, pricingData, metadataSourcePrefix
   const seenEventKeys = new Set();
   const tokenEvents = [];
   const forkedSessionPrefixes = new Set();
+  const replayedForkSessionPrefixes = new Set();
   const managedEventSessionPrefixes = new Set();
   const sessionSourcePrefixes = new Map();
   const conflictingSessionSourcePrefixes = new Set();
@@ -375,12 +392,13 @@ function collectFromSessionFiles(sessionFiles, pricingData, metadataSourcePrefix
     rememberSessionSourcePrefix(prefix, source);
   }
 
-  for (const { fileSessionId, lineage, events } of sessionFiles) {
+  for (const { fileSessionId, lineage, events, replayedFork } of sessionFiles) {
     const metadataSessionPrefix = `local:${CLIENT_KEY}:${hashableSessionPart(lineage.sessionId)}:`;
     rememberSessionSourcePrefix(metadataSessionPrefix, lineage.source);
     if (lineage.parentSessionId) {
       forkedSessionPrefixes.add(`local:${CLIENT_KEY}:${hashableSessionPart(lineage.sessionId)}:`);
     }
+    if (replayedFork) replayedForkSessionPrefixes.add(metadataSessionPrefix);
     if (!events.length) continue;
     const rawSessionId = events.find(event => event.sessionId)?.sessionId || fileSessionId;
     const sessionPrefix = `local:${CLIENT_KEY}:${hashableSessionPart(rawSessionId)}`;
@@ -431,6 +449,7 @@ function collectFromSessionFiles(sessionFiles, pricingData, metadataSourcePrefix
     ...buildOutput(dailyMap, sessionMap, tokenEvents, pricingData),
     reconciliation: {
       eventSessionPrefixes: [...forkedSessionPrefixes],
+      replayedForkSessionPrefixes: [...replayedForkSessionPrefixes],
       managedEventIdPrefix: 'codex:',
       managedEventSessionPrefixes: [...managedEventSessionPrefixes],
       sessionSourcePrefixes: [...sessionSourcePrefixes].map(([prefix, source]) => ({ prefix, source }))
@@ -503,24 +522,28 @@ async function parseSessionFiles({ changedAfterMs = null, metadataSessionPrefixe
       .sort((left, right) => right.timestamp - left.timestamp)[0]?.summary || null;
     const unresolvedFork = Boolean(file.lineage.parentSessionId) && !inheritedTotal;
     const canParseWithoutParent = !unresolvedFork || Boolean(file.lineage.forkedAt);
+    const parsed = !canParseWithoutParent
+      ? { events: [], sawTokenCount: false, complete: false }
+      : await parseSessionFile(
+          file.filePath,
+          file.fileSessionId,
+          inheritedTotal,
+          unresolvedFork ? file.lineage.forkedAt : null,
+          Number.isFinite(changedAfterMs)
+            ? {
+                tailBytes: INCREMENTAL_TAIL_BYTES,
+                sessionId: file.lineage.sessionId,
+                source: file.lineage.source,
+                workspace: file.lineage.workspace
+              }
+            : undefined
+        );
+    const events = parsed.events;
     parsedFiles.push({
       ...file,
-      events: !canParseWithoutParent
-        ? []
-        : await parseSessionFile(
-            file.filePath,
-            file.fileSessionId,
-            inheritedTotal,
-            unresolvedFork ? file.lineage.forkedAt : null,
-            Number.isFinite(changedAfterMs)
-              ? {
-                  tailBytes: INCREMENTAL_TAIL_BYTES,
-                  sessionId: file.lineage.sessionId,
-                  source: file.lineage.source,
-                  workspace: file.lineage.workspace
-                }
-              : undefined
-          )
+      events,
+      replayedFork: !Number.isFinite(changedAfterMs) && Boolean(inheritedTotal)
+        && parsed.complete && parsed.sawTokenCount && events.length === 0
     });
   }
   return {
