@@ -556,6 +556,117 @@ test('collect does not recount token history copied into a forked Codex session'
   }
 });
 
+test('collect clears a stale aggregate for a fully replayed Codex fork', async () => {
+  const fixture = createForkedCodexFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'replayed-child.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: 'replayed-child', parent_thread_id: 'parent', forked_from_id: 'parent',
+          timestamp: '2026-06-17T02:05:00.000Z', originator: 'codex-tui'
+        }
+      }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini' } }),
+      JSON.stringify({
+        type: 'event_msg', timestamp: '2026-06-17T02:05:00.000Z',
+        payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 100 } } }
+      }),
+      JSON.stringify({
+        type: 'event_msg', timestamp: '2026-06-17T02:05:00.001Z',
+        payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 150 } } }
+      })
+    ].join('\n'), 'utf8');
+
+    let result = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath);
+    try {
+      db.prepare(`
+        INSERT INTO session_usage (device, source, session_id, model, total_tokens)
+        VALUES (?, 'Codex CLI', 'local:codex:replayed-child:gpt-5.4-mini', 'gpt-5.4-mini', 150)
+      `).run(hostname());
+    } finally {
+      db.close();
+    }
+
+    result = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+
+    const repaired = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.equal(repaired.prepare(`
+        SELECT total_tokens AS totalTokens FROM session_usage
+        WHERE source = 'Codex CLI' AND session_id = 'local:codex:replayed-child:gpt-5.4-mini'
+      `).get().totalTokens, 0);
+    } finally {
+      repaired.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+test('collect keeps a fork aggregate when its token log cannot be fully parsed', async () => {
+  const fixture = createForkedCodexFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', 'damaged-child.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({
+        type: 'session_meta',
+        payload: {
+          id: 'damaged-child', parent_thread_id: 'parent', forked_from_id: 'parent',
+          timestamp: '2026-06-17T02:05:00.000Z', originator: 'codex-tui'
+        }
+      }),
+      JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini' } }),
+      JSON.stringify({
+        type: 'event_msg', timestamp: '2026-06-17T02:05:00.000Z',
+        payload: { type: 'token_count', info: { total_token_usage: { input_tokens: 100 } } }
+      }),
+      '{"type":"event_msg","payload":{"type":"token_count"'
+    ].join('\n'), 'utf8');
+
+    let result = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath);
+    try {
+      db.prepare(`
+        INSERT INTO session_usage (device, source, session_id, model, total_tokens)
+        VALUES (?, 'Codex CLI', 'local:codex:damaged-child:gpt-5.4-mini', 'gpt-5.4-mini', 100)
+      `).run(hostname());
+    } finally {
+      db.close();
+    }
+
+    result = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+
+    const preserved = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.equal(preserved.prepare(`
+        SELECT total_tokens AS totalTokens FROM session_usage
+        WHERE source = 'Codex CLI' AND session_id = 'local:codex:damaged-child:gpt-5.4-mini'
+      `).get().totalTokens, 100);
+    } finally {
+      preserved.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
 test('collect reclassifies legacy Codex records when session metadata identifies the desktop client', async () => {
   const fixture = createCollectorFixture();
   const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'codex-session.jsonl');
@@ -598,7 +709,52 @@ test('collect reclassifies legacy Codex records when session metadata identifies
   }
 });
 
-test('collect reclassifies zero-token Codex sessions from session metadata', async () => {
+test('collect reads the Codex Desktop model from thread settings before token counters', async () => {
+  const fixture = createCollectorFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'codex-session.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'desktop-settings', originator: 'Codex Desktop' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-terra' } }
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-06-17T02:00:00.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 80, output_tokens: 20 },
+            last_token_usage: { input_tokens: 80, output_tokens: 20 }
+          }
+        }
+      })
+    ].join('\n'), 'utf8');
+
+    const result = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(result.code, 0, result.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.deepEqual(db.prepare(`
+        SELECT source, model,
+          input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens + reasoning_tokens AS totalTokens
+        FROM token_events
+      `).all().map(row => ({ ...row })), [{
+        source: 'Codex Desktop', model: 'gpt-5.6-terra', totalTokens: 100
+      }]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+test('collect removes an unlinked zero-token Codex session with no model', async () => {
   const fixture = createCollectorFixture();
   const emptySessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'desktop-empty.jsonl');
   try {
@@ -616,8 +772,8 @@ test('collect reclassifies zero-token Codex sessions from session metadata', asy
     try {
       db.prepare(`
         INSERT INTO session_usage (device, source, session_id, model, total_tokens)
-        VALUES (?, ?, ?, ?, 0)
-      `).run(hostname(), 'Codex (unidentified client)', 'local:codex:desktop-empty:gpt-5.4-mini', 'gpt-5.4-mini');
+        VALUES (?, ?, ?, 'unknown', 0)
+      `).run(hostname(), 'Codex (unidentified client)', 'local:codex:desktop-empty:unknown');
     } finally {
       db.close();
     }
@@ -632,12 +788,7 @@ test('collect reclassifies zero-token Codex sessions from session metadata', asy
       assert.equal(repaired.prepare(`
         SELECT COUNT(*) AS count
         FROM session_usage
-        WHERE device = ? AND source = 'Codex Desktop' AND session_id = 'local:codex:desktop-empty:gpt-5.4-mini'
-      `).get(hostname()).count, 1);
-      assert.equal(repaired.prepare(`
-        SELECT COUNT(*) AS count
-        FROM session_usage
-        WHERE device = ? AND source = 'Codex (unidentified client)' AND session_id = 'local:codex:desktop-empty:gpt-5.4-mini'
+        WHERE device = ? AND session_id = 'local:codex:desktop-empty:unknown'
       `).get(hostname()).count, 0);
     } finally {
       repaired.close();
@@ -1714,6 +1865,7 @@ function createForkedCodexFixture() {
   }), 'utf8');
   return {
     dir,
+    codexHome,
     dbPath: join(dir, 'usage.sqlite'),
     env: { TOKEN_WORK_CONFIG: configPath }
   };
