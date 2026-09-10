@@ -546,10 +546,10 @@ function Dashboard({
 }) {
   // ───── Filter state ─────
   const [filters, setFilters] = useState(() => ({
-    rangeId: '30d',
-    startDate: U.daysAgo(29),
+    rangeId: 'today',
+    startDate: U.daysAgo(0),
     endDate: U.daysAgo(0),
-    startDateTime: `${U.daysAgo(29)}T00:00`,
+    startDateTime: `${U.daysAgo(0)}T00:00`,
     endDateTime: `${U.daysAgo(0)}T23:59`,
     sources: new Set(),
     devices: new Set(),

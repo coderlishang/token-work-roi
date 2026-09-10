@@ -494,14 +494,26 @@ export const OFFICIAL_PRICE_TABLE = [
   officialRate({
     provider: "deepseek",
     model: "deepseek-v4-flash",
-    aliases: ["deepseek-v4-flash", "deepseek-v4-flash-0731", "deepseek-chat", "deepseek-reasoner"],
+    aliases: ["deepseek-v4-flash", "deepseek-v4-flash-0731", "deepseek-v4-flash-vision-exp", "deepseek-chat", "deepseek-reasoner"],
     input: 0.14,
     cachedInput: 0.0028,
     cacheWrite5m: 0.14,
     cacheWrite1h: 0.14,
     output: 0.28,
     source: "deepseek",
-    note: "DeepSeek docs identify DeepSeek-V4-Flash-0731 as the current version; deepseek-chat and deepseek-reasoner map to deepseek-v4-flash compatibility modes."
+    note: "Historical DeepSeek-V4-Flash-0731 rate retained for recorded legacy model identifiers."
+  }),
+  officialRate({
+    provider: "deepseek",
+    model: "deepseek-flash",
+    aliases: ["deepseek-flash", "deepseek-v4.1-flash"],
+    input: 0.3,
+    cachedInput: 0.006,
+    cacheWrite5m: 0.3,
+    cacheWrite1h: 0.3,
+    output: 1.2,
+    source: "deepseek",
+    note: "DeepSeek-V4.1-Flash uses the deepseek-flash API name. Peak rates are used because historical collection records do not contain the provider billing window; off-peak rates are half of these values."
   }),
   officialRate({
     provider: "MiniMax",
