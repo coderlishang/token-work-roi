@@ -148,9 +148,9 @@ function ReviewDashboard({ rawData, onReloadData }) {
     today.setHours(0, 0, 0, 0);
     return today;
   }, []);
-  const defaultPeriod = useMemo(() => RU.getPeriod('30d', TODAY, rawData.daily), [TODAY, rawData.daily]);
+  const defaultPeriod = useMemo(() => RU.getPeriod('today', TODAY, rawData.daily), [TODAY, rawData.daily]);
 
-  const [periodId, setPeriodId] = useState('30d');
+  const [periodId, setPeriodId] = useState('today');
   const [customRange, setCustomRange] = useState(() => dateTimeForPeriod(defaultPeriod));
   const [customDraft, setCustomDraft] = useState(() => dateTimeForPeriod(defaultPeriod));
   const [customOpen, setCustomOpen] = useState(false);
@@ -179,11 +179,7 @@ function ReviewDashboard({ rawData, onReloadData }) {
     : null, [period]);
 
   const daily = useMemo(() => RU.filterByPeriod(rawData.daily, period), [rawData, period]);
-  const sessions = useMemo(() =>
-    rawData.sessions.filter(session =>
-      !session.lastActivity || (session.lastActivity >= period.start && session.lastActivity <= period.end)
-    )
-  , [rawData, period]);
+  const sessions = useMemo(() => RU.filterSessionsByPeriod(rawData.sessions, period), [rawData, period]);
   const prevDaily = useMemo(() =>
     prevPeriod ? RU.filterByPeriod(rawData.daily, prevPeriod) : []
   , [rawData, prevPeriod]);

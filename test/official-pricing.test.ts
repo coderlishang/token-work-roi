@@ -225,16 +225,20 @@ test('calculates Gemini API USD price from official rates', () => {
   }
 });
 
-test('recognizes the current DeepSeek V4 Flash version identifier', () => {
-  const cost = calculateOfficialCost('deepseek-v4-flash-0731', {
+test('keeps historical DeepSeek V4 Flash pricing separate from V4.1 Flash', () => {
+  const cost = calculateOfficialCost('DeepSeek V4.1 Flash', {
     input: 1_000_000,
     cacheRead: 1_000_000,
     output: 1_000_000
   });
+  const retired = calculateOfficialCost('deepseek-v4-flash-0731', { input: 1_000_000 });
 
   assert.equal(cost.priced, true);
   assert.equal(cost.provider, 'deepseek');
-  assert.equal(cost.resolvedModel, 'deepseek-v4-flash');
+  assert.equal(cost.resolvedModel, 'deepseek-flash');
+  assert.equal(cost.totalUSD, 1.506);
+  assert.equal(retired.resolvedModel, 'deepseek-v4-flash');
+  assert.equal(retired.totalUSD, 0.14);
 });
 
 test('prices GLM-5.3 and GLM-5.3-Flash from current official RMB rates', () => {

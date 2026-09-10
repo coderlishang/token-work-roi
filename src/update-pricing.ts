@@ -37,7 +37,8 @@ const STABLE_ALIASES = new Map([
   ['openai::gpt-5-6-sol', ['gpt-5.6-sol', 'gpt-5-6-sol']],
   ['openai::gpt-5-6-terra', ['gpt-5.6-terra', 'gpt-5-6-terra']],
   ['openai::gpt-5-6-luna', ['gpt-5.6-luna', 'gpt-5-6-luna']],
-  ['deepseek::deepseek-v4-flash', ['deepseek-v4-flash', 'deepseek-v4-flash-0731', 'deepseek-chat', 'deepseek-reasoner']],
+  ['deepseek::deepseek-v4-flash', ['deepseek-v4-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-flash-vision-exp', 'deepseek-chat', 'deepseek-reasoner']],
+  ['deepseek::deepseek-flash', ['deepseek-flash', 'deepseek-v4.1-flash', 'deepseek-v4-1-flash']],
   ['minimax::minimax-m3', ['minimax-m3', 'minimax-m-3']],
   ['xai::grok-4-6', ['grok-4.6', 'grok-4-6']],
   ['gemini::gemini-3-8-flash', ['gemini-3.8-flash', 'gemini-3-8-flash']],
@@ -604,18 +605,19 @@ function parseXaiModels(body) {
 
 function parseDeepSeekModels(body) {
   const text = tableText(body);
-  const hit = matchPricingRow(text, /1M INPUT TOKENS \(CACHE HIT\)\|\|\$([0-9.]+)\|\|\$([0-9.]+)/);
-  const miss = matchPricingRow(text, /1M INPUT TOKENS \(CACHE MISS\)\|\|\$([0-9.]+)\|\|\$([0-9.]+)/);
-  const output = matchPricingRow(text, /1M OUTPUT TOKENS\|\|\$([0-9.]+)\|\|\$([0-9.]+)/);
+  if (!/deepseek-flash/i.test(text) || !/deepseek-v4\.1-flash/i.test(text)) return [];
+  const hit = deepSeekPeakRates(text, 'CACHE HIT');
+  const miss = deepSeekPeakRates(text, 'CACHE MISS');
+  const output = deepSeekPeakRates(text, '1M OUTPUT TOKENS');
   if (!hit || !miss || !output) return [];
   return [
-    rateModel('deepseek', 'deepseek-v4-flash', {
+    rateModel('deepseek', 'deepseek-flash', {
       cachedInput: hit[0],
       input: miss[0],
       output: output[0],
       cacheWrite5m: miss[0],
       cacheWrite1h: miss[0]
-    }, 'deepseek'),
+    }, 'deepseek', 'official-page', null, 'DeepSeek-V4.1-Flash uses the deepseek-flash API name. Peak rates are used because historical collection records do not contain the provider billing window; off-peak rates are half of these values.'),
     rateModel('deepseek', 'deepseek-v4-pro', {
       cachedInput: hit[1],
       input: miss[1],
@@ -624,6 +626,19 @@ function parseDeepSeekModels(body) {
       cacheWrite1h: miss[1]
     }, 'deepseek')
   ].filter(Boolean);
+}
+
+function deepSeekPeakRates(text, label) {
+  const start = text.indexOf(label);
+  if (start < 0) return null;
+  const next = text.indexOf('1M ', start + label.length);
+  const values = Array.from(
+    text.slice(start, next < 0 ? undefined : next).matchAll(/\$([0-9.]+)/g),
+    match => Number(match[1])
+  );
+  if (values.length >= 4) return [values[2], values[3]];
+  if (values.length >= 2) return [values[0], values[1]];
+  return null;
 }
 
 function parseZaiModels(body, exchangeRate) {
@@ -1015,11 +1030,6 @@ function cnyToUsdRates(rates: ParsedRates, exchangeRate): ParsedRates | null {
 
 function tableText(body) {
   return body.replace(/<[^>]+>/g, '|').replace(/\s+/g, ' ');
-}
-
-function matchPricingRow(text, pattern) {
-  const match = text.match(pattern);
-  return match ? [Number(match[1]), Number(match[2])] : null;
 }
 
 function escapeRegExp(value) {

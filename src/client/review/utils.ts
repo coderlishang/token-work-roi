@@ -94,6 +94,40 @@ function filterByPeriod(rows, period) {
   return rows.filter(r => inRange(r.usageDate, period));
 }
 
+const CHINA_DATE_TIME = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23'
+});
+
+function chinaDateTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${text}T23:59`;
+
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return text.replace(' ', 'T').slice(0, 16);
+
+  const parts = Object.fromEntries(CHINA_DATE_TIME.formatToParts(date)
+    .filter(part => part.type !== 'literal')
+    .map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function filterSessionsByPeriod(sessions, period) {
+  const start = period.id === 'custom' ? period.startDateTime : `${period.start}T00:00`;
+  const end = period.id === 'custom' ? period.endDateTime : `${period.end}T23:59`;
+  return sessions.filter(session => {
+    if (!session.lastActivity) return true;
+    const activity = chinaDateTime(session.lastActivity);
+    return activity >= start && activity <= end;
+  });
+}
+
 function sumField(rows, f) {
   let s = 0; for (const r of rows) s += r[f] || 0; return s;
 }
@@ -333,7 +367,7 @@ function monthsInPeriod(period) {
 }
 
 export const RU = {
-  PERIOD_LABELS, getPeriod, getCustomPeriod, filterByPeriod, sumField,
+  PERIOD_LABELS, getPeriod, getCustomPeriod, filterByPeriod, filterSessionsByPeriod, sumField,
   aggregateBy, topModelFor, dailyTotals, narrativeForProjects, findPeaks,
   buildInsights, heatColor, buildMonthGrid, monthsInPeriod,
   localDateStr, parseDateStr
