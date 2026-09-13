@@ -1404,8 +1404,7 @@ function liveSessions() {
     LIMIT 100
   `).map(session => ({
     ...session,
-    model: session.model || modelFromSessionId(session.sessionId),
-    cacheReadTokens: Number(session.cacheReadTokens || 0) + Number(session.cachedInputTokens || 0)
+    model: session.model || modelFromSessionId(session.sessionId)
   }));
 }
 

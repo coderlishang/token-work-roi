@@ -647,17 +647,22 @@ function normalizeSession(session) {
   const model = session.model || 'unknown';
   const inputTokens = number(session.inputTokens ?? session.input_tokens);
   const outputTokens = number(session.outputTokens ?? session.output_tokens);
-  const cacheReadTokens = number(session.cacheReadTokens ?? session.cache_read_tokens);
+  const cacheReadTokens = number(session.cacheReadTokens ?? session.cache_read_tokens)
+    + number(session.cachedInputTokens ?? session.cached_input_tokens);
   const cacheCreationTokens = number(session.cacheCreationTokens ?? session.cache_creation_tokens);
   const reasoningTokens = number(session.reasoningOutputTokens ?? session.reasoningTokens ?? session.reasoning_output_tokens);
+  const totalTokens = Math.max(
+    number(session.totalTokens ?? session.total_tokens),
+    inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens + reasoningTokens
+  );
   const storedCostUSD = number(session.costUSD ?? session.cost_usd);
-  const costUSD = storedCostUSD || calculateOfficialCost(model, {
+  const costUSD = storedCostUSD || calculateLiveCost(model, {
     input: inputTokens,
     output: outputTokens,
     cacheRead: cacheReadTokens,
     cacheWrite: cacheCreationTokens,
     reasoning: reasoningTokens
-  }, { provider: providerFromSource(session.source) }).totalUSD;
+  }, totalTokens, providerFromSource(session.source));
   return {
     device: session.device || '',
     source: session.source || 'unknown',
@@ -671,9 +676,15 @@ function normalizeSession(session) {
     cacheReadTokens,
     cacheCreationTokens,
     reasoningTokens,
-    totalTokens: number(session.totalTokens ?? session.total_tokens),
+    totalTokens,
     costUSD
   };
+}
+
+function calculateLiveCost(model, tokens, totalTokens, provider) {
+  const hasBreakdown = Object.values(tokens).some(value => number(value) > 0);
+  const effectiveTokens = hasBreakdown ? tokens : { input: totalTokens };
+  return calculateOfficialCost(model, effectiveTokens, { provider }).totalUSD;
 }
 
 function normalizeEvent(event) {
