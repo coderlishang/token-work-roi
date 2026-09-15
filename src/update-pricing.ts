@@ -71,7 +71,13 @@ const sourceStatuses = new Map(sources.map(source => [providerKey(source.provide
 const fetchedRates = new Map();
 for (const model of sources.flatMap(source => source.models || [])) {
   const key = pricingKey(model);
-  if (fetchedRates.has(key)) throw new Error(`Duplicate fetched pricing model: ${key}`);
+  const previous = fetchedRates.get(key);
+  if (previous) {
+    if (!sameFetchedPricing(previous, model)) {
+      throw new Error(`Conflicting fetched pricing model: ${key}`);
+    }
+    continue;
+  }
   fetchedRates.set(key, model);
 }
 const pricing = {
@@ -1038,6 +1044,24 @@ function escapeRegExp(value) {
 
 function pricingKey(row) {
   return `${providerKey(row.provider)}::${String(row.model || '').toLowerCase().replace(/(?<=\d)\.(?=\d)/g, '-')}`;
+}
+
+function sameFetchedPricing(left, right) {
+  return JSON.stringify({
+    provider: providerKey(left.provider),
+    model: pricingKey(left),
+    ratesPerMTok: left.ratesPerMTok || null,
+    officialRatesPerMTok: left.officialRatesPerMTok || null,
+    priced: left.priced,
+    unavailableReason: left.unavailableReason || null
+  }) === JSON.stringify({
+    provider: providerKey(right.provider),
+    model: pricingKey(right),
+    ratesPerMTok: right.ratesPerMTok || null,
+    officialRatesPerMTok: right.officialRatesPerMTok || null,
+    priced: right.priced,
+    unavailableReason: right.unavailableReason || null
+  });
 }
 
 function isZhipuSource(source) {
