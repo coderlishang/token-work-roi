@@ -8,6 +8,9 @@ import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import type { ProcessResult } from '../test-support/process.ts';
 import { localDateFromTimestamp } from '../src/collectors/utils.ts';
+import { collect } from '../src/collectors/claude-code.ts';
+import { configuredClaudeRequestModel, resetClaudeRequestModelCache } from '../src/claude-settings.ts';
+import { openDb } from '../src/db.ts';
 import { calculateCost } from '../src/pricing.ts';
 
 interface CollectSourceSummary {
@@ -1871,6 +1874,56 @@ function createForkedCodexFixture() {
   };
 }
 
+function createStaleBaselineCodexFixture() {
+  const dir = tempDir();
+  const codexHome = join(dir, 'codex');
+  const sessionDir = join(codexHome, 'sessions', '2026', '06', '17');
+  mkdirSync(sessionDir, { recursive: true });
+  const tokenCount = (timestamp, totalTokens, lastTokens) => JSON.stringify({
+    type: 'event_msg',
+    timestamp,
+    payload: {
+      type: 'token_count',
+      info: {
+        total_token_usage: { input_tokens: totalTokens },
+        last_token_usage: { input_tokens: lastTokens }
+      }
+    }
+  });
+  writeFileSync(join(sessionDir, 'parent.jsonl'), [
+    JSON.stringify({ type: 'session_meta', payload: { id: 'baseline-parent', timestamp: '2026-06-17T02:00:00.000Z', originator: 'codex-tui' } }),
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini' } }),
+    tokenCount('2026-06-17T02:00:00.000Z', 1_000_000_000, 1_000_000_000)
+  ].join('\n'), 'utf8');
+  writeFileSync(join(sessionDir, 'child.jsonl'), [
+    JSON.stringify({
+      type: 'session_meta',
+      payload: {
+        id: 'baseline-child',
+        parent_thread_id: 'baseline-parent',
+        forked_from_id: 'baseline-parent',
+        timestamp: '2026-06-17T02:05:00.000Z',
+        originator: 'codex-tui'
+      }
+    }),
+    JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.4-mini' } }),
+    // First child total exceeds the parent baseline by 100M — the counter
+    // mismatch must be absorbed, not billed as a turn.
+    tokenCount('2026-06-17T02:05:00.000Z', 1_100_000_000, 500),
+    tokenCount('2026-06-17T02:05:00.001Z', 1_100_000_150, 150),
+    tokenCount('2026-06-17T02:06:00.000Z', 1_100_000_170, 20)
+  ].join('\n'), 'utf8');
+  const configPath = join(dir, 'collectors.json');
+  writeFileSync(configPath, JSON.stringify({
+    collectors: { codex: { homes: [codexHome], sessionSubdirs: ['sessions'] } }
+  }), 'utf8');
+  return {
+    dir,
+    dbPath: join(dir, 'usage.sqlite'),
+    env: { TOKEN_WORK_CONFIG: configPath }
+  };
+}
+
 function createResettingCodexFixture() {
   const dir = tempDir();
   const codexHome = join(dir, 'codex');
@@ -1983,6 +2036,293 @@ function createOpenClawArchiveFixture({ includeArchivedHistory = false } = {}) {
     dir,
     dbPath: join(dir, 'usage.sqlite'),
     env: { TOKEN_WORK_CONFIG: configPath }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ark auto 归因（claude-code 采集器 + claude-settings + 一次性 DB 迁移）
+// ---------------------------------------------------------------------------
+
+const ARK_SIGNATURE = {
+  service_tier: 'standard',
+  speed: 'standard',
+  inference_geo: '',
+  iterations: []
+};
+
+function assistantLine({ model, usage, id }: {
+  model: string;
+  usage: Record<string, unknown>;
+  id?: string;
+}) {
+  return JSON.stringify({
+    type: 'assistant',
+    timestamp: '2026-09-16T08:00:00.000Z',
+    message: {
+      id: id || 'msg_01',
+      role: 'assistant',
+      model,
+      usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, ...usage }
+    },
+    requestId: 'req_01'
+  });
+}
+
+async function withClaudeConfigDir({ settingsEnv }, fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'token-work-ark-'));
+  const projectsDir = join(dir, 'projects', 'demo');
+  mkdirSync(projectsDir, { recursive: true });
+  if (settingsEnv) {
+    writeFileSync(join(dir, 'settings.json'), JSON.stringify({ env: settingsEnv }));
+  }
+  const previous = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  resetClaudeRequestModelCache();
+  try {
+    // Await before cleanup: a bare `return fn(...)` would run finally —
+    // deleting the fixture directory — before the async body finishes.
+    return await fn(dir, projectsDir);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previous;
+    resetClaudeRequestModelCache();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('configured request model resolves from Claude Code settings', () => {
+  withClaudeConfigDir({ settingsEnv: { ANTHROPIC_MODEL: 'Ark-Code-Latest' } }, () => {
+    assert.equal(configuredClaudeRequestModel(), 'ark-code-latest');
+  });
+  withClaudeConfigDir({ settingsEnv: {} }, () => {
+    assert.equal(configuredClaudeRequestModel(), null);
+  });
+  // A configured "auto" is opaque and must not be returned as the specific model.
+  withClaudeConfigDir({ settingsEnv: { ANTHROPIC_MODEL: 'auto' } }, () => {
+    assert.equal(configuredClaudeRequestModel(), null);
+  });
+});
+
+test('Ark auto responses display the configured request model', async () => {
+  await withClaudeConfigDir({ settingsEnv: { ANTHROPIC_MODEL: 'ark-code-latest' } }, async (dir, projectsDir) => {
+    writeFileSync(join(projectsDir, 'session.jsonl'), [
+      assistantLine({ model: 'auto', usage: ARK_SIGNATURE, id: 'msg_ark' }),
+      // Bare "auto" without Ark gateway fields stays unresolved, never mispriced.
+      assistantLine({ model: 'auto', usage: {}, id: 'msg_bare' }),
+      assistantLine({ model: 'claude-sonnet-5', usage: {}, id: 'msg_plain' })
+    ].join('\n'));
+
+    const result = await collect(null);
+    const models = result.modelsJson.entries.map(entry => entry.model).sort();
+    assert.deepEqual(models, ['ark-code-latest', 'auto', 'claude-sonnet-5']);
+  });
+});
+
+test('Ark auto falls back to ark-auto when no request model is configured', async () => {
+  await withClaudeConfigDir({ settingsEnv: null }, async (dir, projectsDir) => {
+    writeFileSync(join(projectsDir, 'session.jsonl'), assistantLine({ model: 'auto', usage: ARK_SIGNATURE }));
+    const result = await collect(null);
+    assert.deepEqual(result.modelsJson.entries.map(entry => entry.model), ['ark-auto']);
+  });
+});
+
+test('historical auto and ark-auto duplicates collapse into the configured model on reopen', async () => {
+  await withClaudeConfigDir({ settingsEnv: { ANTHROPIC_MODEL: 'ark-code-latest' } }, (dir) => {
+    const dbPath = join(dir, 'usage.sqlite');
+
+    // First open: seed legacy rows once the one-shot migration has nothing to do.
+    {
+      const db = openDb(dbPath);
+      const insertEvent = db.prepare(`
+        INSERT INTO token_events (
+          event_id, device, source, session_id, timestamp, model,
+          input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+          reasoning_tokens, privacy_level
+        ) VALUES (?, 'dev', 'Claude Code', ?, '2026-09-15T00:00:00.000Z', ?, 10, 2, 3, 0, 0, 'safe')
+      `);
+      // The same response captured under all three eras of session suffixes:
+      // only the canonical copy must survive.
+      insertEvent.run('evt-can', 'local:claude:s1:ark-code-latest', 'ark-code-latest');
+      insertEvent.run('evt-dup1', 'local:claude:s1:auto', 'ark-code-latest');
+      insertEvent.run('evt-dup2', 'local:claude:s1:ark-auto', 'ark-code-latest');
+      // Orphan legacy rows (no canonical twin) are renamed, never dropped.
+      insertEvent.run('evt-orphan-auto', 'sess-1', 'auto');
+      insertEvent.run('evt-orphan-ark', 'sess-1', 'ark-auto');
+      db.prepare(`
+        INSERT INTO daily_usage (device, source, usage_date, model, input_tokens, total_tokens, cost_usd)
+        VALUES ('dev', 'Claude Code', '2026-09-15', 'auto', 100, 100, 0.1)
+      `).run();
+      db.prepare(`
+        INSERT INTO daily_usage (device, source, usage_date, model, input_tokens, total_tokens)
+        VALUES ('dev', 'WorkBuddy', '2026-09-15', 'auto', 7, 7)
+      `).run();
+      const insertSession = db.prepare(`
+        INSERT INTO session_usage (device, source, session_id, model, input_tokens, total_tokens)
+        VALUES ('dev', 'Claude Code', ?, ?, 12, 15)
+      `);
+      insertSession.run('local:claude:s1:ark-code-latest', 'ark-code-latest');
+      insertSession.run('local:claude:s1:auto', 'ark-code-latest');
+      insertSession.run('local:claude:s1:ark-auto', 'ark-auto');
+      insertSession.run('sess-1', 'auto');
+      db.close();
+    }
+
+    // Reopen triggers the one-shot repair; other sources keep their rows.
+    {
+      const db = openDb(dbPath);
+      // Duplicate copies of the same response are gone; orphans renamed.
+      const events = db.prepare("SELECT event_id, session_id, model FROM token_events WHERE source = 'Claude Code' ORDER BY event_id").all();
+      assert.deepEqual(events.map(row => row.event_id), ['evt-can', 'evt-orphan-ark', 'evt-orphan-auto']);
+      assert.ok(events.every(row => row.model === 'ark-code-latest'));
+      // Daily is rebuilt from token_events — 3 surviving events of
+      // 10 input / 2 output / 3 cache-read each = 30/6/9, total 45 —
+      // replacing the stale seeded legacy daily rows.
+      const daily = db.prepare("SELECT model, input_tokens, output_tokens, cache_read_tokens, total_tokens, cost_usd FROM daily_usage WHERE source = 'Claude Code'").all();
+      assert.equal(daily.length, 1);
+      assert.equal(daily[0].model, 'ark-code-latest');
+      assert.equal(daily[0].input_tokens, 30);
+      assert.equal(daily[0].output_tokens, 6);
+      assert.equal(daily[0].cache_read_tokens, 9);
+      assert.equal(daily[0].total_tokens, 45);
+      const expectedCost = calculateCost('ark-code-latest', { input: 30, output: 6, cacheRead: 9, cacheWrite: 0, reasoning: 0 });
+      assert.ok(Math.abs(Number(daily[0].cost_usd) - expectedCost) < 1e-9);
+      // Rows from other sources are never touched.
+      assert.equal(db.prepare("SELECT total_tokens FROM daily_usage WHERE source = 'WorkBuddy'").get().total_tokens, 7);
+      // Legacy-suffix sessions with a canonical twin are dropped; the rest renamed.
+      const sessions = db.prepare("SELECT session_id, model FROM session_usage WHERE source = 'Claude Code' ORDER BY session_id").all();
+      assert.deepEqual(sessions.map(row => row.session_id), ['local:claude:s1:ark-code-latest', 'sess-1']);
+      assert.ok(sessions.every(row => row.model === 'ark-code-latest'));
+      // A second reopen must be a no-op.
+      db.close();
+      const again = openDb(dbPath);
+      assert.equal(again.prepare("SELECT total_tokens FROM daily_usage WHERE model = 'ark-code-latest'").get().total_tokens, 45);
+      assert.equal(again.prepare("SELECT count(*) AS n FROM token_events WHERE source = 'Claude Code'").get().n, 3);
+      again.close();
+    }
+
+    // Repair is backed up before it runs.
+    const backups = readdirSync(join(dir, 'backups'));
+    assert.ok(backups.some(name => name.includes('ark-auto-model-rename')));
+  });
+});
+
+test('model-name repair skips backup when only twinless legacy suffixes remain', async () => {
+  await withClaudeConfigDir({ settingsEnv: { ANTHROPIC_MODEL: 'ark-code-latest' } }, async (dir) => {
+    const dbPath = join(dir, 'usage.sqlite');
+    const insertEvent = (db, eventId, sessionId) => db.prepare(`
+      INSERT INTO token_events (
+        event_id, device, source, session_id, timestamp, model,
+        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+        reasoning_tokens, privacy_level
+      ) VALUES (?, 'dev', 'Claude Code', ?, '2026-09-15T00:00:00.000Z', 'claude-sonnet-5', 10, 2, 3, 0, 0, 'safe')
+    `).run(eventId, sessionId);
+    const insertSession = (db, sessionId) => db.prepare(`
+      INSERT INTO session_usage (device, source, session_id, model, input_tokens, total_tokens)
+      VALUES ('dev', 'Claude Code', ?, 'claude-sonnet-5', 12, 15)
+    `).run(sessionId);
+
+    // 无孪生的 legacy 后缀行是唯一遗留时，修复必须整体跳过（不备份、不改数据）。
+    {
+      const db = openDb(dbPath);
+      insertEvent(db, 'evt-orphan', 'sess-9:auto');
+      insertSession(db, 'sess-9:auto');
+      db.close();
+      const db2 = openDb(dbPath);
+      assert.equal(db2.prepare("SELECT count(*) AS n FROM token_events WHERE event_id = 'evt-orphan'").get().n, 1);
+      db2.close();
+      const backupDir = join(dir, 'backups');
+      const hasRenameBackup = existsSync(backupDir)
+        && readdirSync(backupDir).some(name => name.includes('ark-auto-model-rename'));
+      assert.equal(hasRenameBackup, false);
+    }
+
+    // canonical 孪生出现后，下一次打开必须照常清理并先备份。
+    {
+      const db = openDb(dbPath);
+      insertEvent(db, 'evt-twin', 'sess-9:ark-code-latest');
+      insertSession(db, 'sess-9:ark-code-latest');
+      db.close();
+      const db2 = openDb(dbPath);
+      assert.equal(db2.prepare("SELECT count(*) AS n FROM token_events WHERE event_id = 'evt-orphan'").get().n, 0);
+      assert.equal(db2.prepare("SELECT count(*) AS n FROM token_events WHERE event_id = 'evt-twin'").get().n, 1);
+      assert.equal(db2.prepare("SELECT count(*) AS n FROM session_usage WHERE session_id = 'sess-9:auto'").get().n, 0);
+      assert.equal(db2.prepare("SELECT count(*) AS n FROM session_usage WHERE session_id = 'sess-9:ark-code-latest'").get().n, 1);
+      db2.close();
+      const backupDir = join(dir, 'backups');
+      assert.ok(readdirSync(backupDir).some(name => name.includes('ark-auto-model-rename')));
+    }
+  });
+});
+
+test('collect rebuilds DeepSeek Harness daily and session totals from every stored event', async () => {
+  const fixture = createDeepSeekHarnessFixture();
+  try {
+    const first = await runNode([
+      'src/collect.ts', '--sources=deepseek-harness', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(first.code, 0, first.stderr);
+
+    // Harness 会话累计消耗继续增长：第二次采集只上报增量。
+    writeFileSync(fixture.sessionPath, fixture.snapshot(1_800, 900, 3_200, 200, 200));
+
+    const second = await runNode([
+      'src/collect.ts', '--sources=deepseek-harness', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(second.code, 0, second.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      const eventTotal = db.prepare(`
+        SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens + reasoning_tokens) AS total
+        FROM token_events WHERE source = 'DeepSeek Harness'
+      `).get().total;
+      assert.equal(eventTotal, 1_800 + 900 + 3_200 + 200);
+      // daily/session 必须等于全部事件之和，而不是最后一次 delta。
+      assert.deepEqual(db.prepare(`
+        SELECT sum(total_tokens) AS total FROM daily_usage WHERE source = 'DeepSeek Harness'
+      `).all().map(row => row.total), [eventTotal]);
+      assert.deepEqual(db.prepare(`
+        SELECT total_tokens AS total FROM session_usage WHERE source = 'DeepSeek Harness'
+      `).all().map(row => row.total), [eventTotal]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+function createDeepSeekHarnessFixture() {
+  const dir = tempDir();
+  const sessionsDir = join(dir, 'dsh', 'storages', 'session_projcache', 'sessions');
+  mkdirSync(sessionsDir, { recursive: true });
+  const sessionPath = join(sessionsDir, 'session-fixture.json');
+  const snapshot = (input, output, cacheRead, cacheWrite, seq) => JSON.stringify({
+    record: {
+      identity: {
+        formatVersion: 3,
+        createdAt: Date.parse('2026-06-17T01:00:00.000Z'),
+        cwd: join(dir, 'workspace'),
+        isSeeded: false,
+        inheritedEventCount: 0
+      },
+      rows: {
+        tokenUsage: { ver: 2, seq, val: { totals: { uncachedInputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite }, last: null } },
+        modelSelection: { ver: 2, seq, val: { lastUsed: { provider: 'deepseek-official', model: 'deepseek-flash' }, pending: null } }
+      }
+    }
+  });
+  writeFileSync(sessionPath, snapshot(1_000, 500, 2_000, 0, 100));
+  const configPath = join(dir, 'collectors.json');
+  writeFileSync(configPath, JSON.stringify({
+    collectors: { deepseekHarness: { roots: [join(dir, 'dsh')] } }
+  }), 'utf8');
+  return {
+    dir,
+    dbPath: join(dir, 'usage.sqlite'),
+    sessionPath,
+    snapshot,
+    env: { TOKEN_WORK_CONFIG: configPath, NODE_OPTIONS: '--no-warnings' }
   };
 }
 

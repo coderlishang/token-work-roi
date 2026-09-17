@@ -21,7 +21,7 @@ export async function collectStructuredUsage({
     events.push(...parsed.map(event => ({ ...event, client: clientKey })));
   }
 
-  return buildOutput(clientKey, events, pricingData);
+  return buildStructuredUsageOutput(clientKey, events, pricingData);
 }
 
 export async function collectStructuredUsageWithAudit({
@@ -40,7 +40,7 @@ export async function collectStructuredUsageWithAudit({
   }
 
   return {
-    output: buildOutput(clientKey, events, pricingData),
+    output: buildStructuredUsageOutput(clientKey, events, pricingData),
     audit
   };
 }
@@ -305,7 +305,7 @@ function hasReliableTokens(tokens) {
   return tokens.input > 0 || tokens.output > 0 || tokens.cacheRead > 0 || tokens.cacheWrite > 0 || tokens.reasoning > 0;
 }
 
-function buildOutput(clientKey, events, pricingData) {
+export function buildStructuredUsageOutput(clientKey, events, pricingData) {
   const dailyMap = new Map();
   const workspaceMap = new Map();
 

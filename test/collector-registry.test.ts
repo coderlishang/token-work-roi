@@ -18,11 +18,14 @@ test('collector detection includes experimental source metadata', () => {
   const rows = detectCollectors();
   const cursor = rows.find(item => item.id === 'cursor');
   const copilot = rows.find(item => item.id === 'copilot');
+  const deepseekHarness = rows.find(item => item.id === 'deepseek-harness');
   assert.equal(cursor.supportStatus, 'experimental');
   assert.equal(copilot.defaultEnabled, false);
   assert.equal(cursor.readsConversationContent, false);
   assert.equal(cursor.tokenReliability, 'explicit-token-fields-only');
   assert.ok(cursor.dataFields.includes('input_tokens'));
+  assert.equal(deepseekHarness.supportStatus, 'experimental');
+  assert.equal(deepseekHarness.defaultEnabled, false);
 });
 
 test('enabled collectors ignore experimental ids by default', () => {

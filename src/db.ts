@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { canonicalModelName } from './collectors/utils.ts';
+import { configuredClaudeRequestModel } from './claude-settings.ts';
+import { canonicalModelName, localDateFromTimestamp } from './collectors/utils.ts';
+import { calculateCost } from './pricing.ts';
 
 type InputRecord = Record<string, unknown>;
 
@@ -52,6 +54,7 @@ export function openDb(dbPath = defaultDbPath) {
   db.exec('PRAGMA foreign_keys = ON');
   initSchema(db);
   repairModelNames(db, dbPath);
+  repairArkAutoModelNames(db, dbPath);
   return db;
 }
 
@@ -81,6 +84,208 @@ function repairModelNames(db, dbPath) {
       db.prepare('DELETE FROM daily_usage WHERE model = ?').run(model);
       db.prepare('UPDATE session_usage SET model = ? WHERE model = ?').run(canonical, model);
       db.prepare('UPDATE token_events SET model = ? WHERE model = ?').run(canonical, model);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+// Early builds recorded Volcengine Ark Coding Plan responses under the
+// gateway's opaque "auto" (or the interim "ark-auto") label, keyed by
+// model-suffixed session ids. Ark does not expose the routed backend model,
+// so those rows move to the configured request model (e.g. ark-code-latest),
+// or ark-auto when no concrete alias is configured locally.
+//
+// The same response can exist twice: once under a legacy session suffix and
+// once re-captured under the canonical suffix by a newer collector. Merging
+// blindly would double-count those, so legacy rows with a canonical twin are
+// deleted and only orphaned legacy rows are renamed. Daily rows for the
+// canonical model are then rebuilt from token_events, which are the single
+// source of truth for Claude Code aggregates.
+function repairArkAutoModelNames(db, dbPath) {
+  const canonical = configuredClaudeRequestModel() || 'ark-auto';
+  const legacyModels = ['auto', 'ark-auto'].filter(model => model !== canonical);
+  const legacySuffixes = legacyModels;
+
+  const legacyModelCount = db.prepare(`
+    SELECT count(*) AS n FROM (
+      SELECT model FROM daily_usage WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+      UNION ALL SELECT model FROM session_usage WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+      UNION ALL SELECT model FROM token_events WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+    )
+  `).get().n;
+  const legacySuffixRows = db.prepare(`
+    SELECT event_id, device, session_id, timestamp, model,
+      input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens, privacy_level
+    FROM token_events
+    WHERE source = 'Claude Code'
+      AND (session_id LIKE '%:auto' OR session_id LIKE '%:ark-auto')
+  `).all();
+  if (!legacyModelCount && !legacySuffixRows.length) return;
+
+  const legacySuffixOf = sessionId => sessionId.endsWith(':ark-auto') && legacySuffixes.includes('ark-auto')
+    ? 'ark-auto'
+    : 'auto';
+  const legacyBaseOf = sessionId => sessionId.slice(0, sessionId.length - legacySuffixOf(sessionId).length - 1);
+  const canonicalTwin = db.prepare(`
+    SELECT 1 FROM token_events
+    WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+      AND timestamp = ? AND privacy_level = ?
+      AND input_tokens = ? AND output_tokens = ?
+      AND cache_read_tokens = ? AND cache_creation_tokens = ? AND reasoning_tokens = ?
+    LIMIT 1
+  `);
+  const canonicalSessionTwin = db.prepare(`
+    SELECT 1 FROM session_usage
+    WHERE device = ? AND source = 'Claude Code' AND session_id = ? LIMIT 1
+  `);
+  const legacySessions = db.prepare(`
+    SELECT device, session_id FROM session_usage
+    WHERE source = 'Claude Code' AND (session_id LIKE '%:auto' OR session_id LIKE '%:ark-auto')
+  `).all();
+  // 无实际变更时不备份不开事务；孪生每次实时检查，晚到孪生仍会被下次修复清理。
+  const legacyDailyCount = db.prepare(`
+    SELECT count(*) AS n FROM daily_usage
+    WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+  `).get().n;
+  const willChange = legacyModelCount > 0
+    || legacyDailyCount > 0
+    || legacySuffixRows.some(row => canonicalTwin.get(
+      row.device, `${legacyBaseOf(row.session_id)}:${canonical}`, row.timestamp, row.privacy_level,
+      row.input_tokens, row.output_tokens, row.cache_read_tokens,
+      row.cache_creation_tokens, row.reasoning_tokens
+    ))
+    || legacySessions.some(row => canonicalSessionTwin.get(row.device, `${legacyBaseOf(row.session_id)}:${canonical}`));
+  if (!willChange) return;
+
+  createSqliteBackup(db, dbPath, { reason: 'ark-auto-model-rename' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    // 1. Drop legacy-suffix events whose response was also captured under the
+    //    canonical session suffix (same base, timestamp and token counters).
+    const deleteEvent = db.prepare('DELETE FROM token_events WHERE event_id = ? AND source = ?');
+    const affectedDates = new Set();
+    for (const row of legacySuffixRows) {
+      const base = legacyBaseOf(row.session_id);
+      const twin = canonicalTwin.get(
+        row.device, `${base}:${canonical}`, row.timestamp, row.privacy_level,
+        row.input_tokens, row.output_tokens, row.cache_read_tokens,
+        row.cache_creation_tokens, row.reasoning_tokens
+      );
+      if (twin) deleteEvent.run(row.event_id, 'Claude Code');
+      affectedDates.add(localDateFromTimestamp(row.timestamp));
+    }
+
+    // 2. Rename surviving legacy-model rows to the canonical model.
+    for (const model of legacyModels) {
+      db.prepare(`
+        UPDATE token_events SET model = ?
+        WHERE source = 'Claude Code' AND lower(model) = ?
+      `).run(canonical, model);
+      db.prepare(`
+        UPDATE session_usage SET model = ?
+        WHERE source = 'Claude Code' AND lower(model) = ?
+      `).run(canonical, model);
+    }
+
+    // 3. Legacy-suffix sessions with a canonical twin are duplicates; the
+    //    rest keep their (renamed) model.
+    const deleteSession = db.prepare(`
+      DELETE FROM session_usage WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+    `);
+    for (const row of legacySessions) {
+      const base = legacyBaseOf(row.session_id);
+      if (canonicalSessionTwin.get(row.device, `${base}:${canonical}`)) {
+        deleteSession.run(row.device, row.session_id);
+      }
+    }
+
+    // 4. Rebuild the canonical daily rows from token_events for every date
+    //    touched by legacy rows, then drop the legacy daily rows.
+    for (const row of db.prepare(`
+      SELECT DISTINCT usage_date FROM daily_usage
+      WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+    `).all()) {
+      affectedDates.add(row.usage_date);
+    }
+    const rebuildDaily = db.prepare(`
+      INSERT INTO daily_usage (
+        device, source, usage_date, model, input_tokens, output_tokens,
+        cache_creation_tokens, cache_read_tokens, cached_input_tokens,
+        reasoning_output_tokens, total_tokens, cost_usd, updated_at
+      ) VALUES (?, 'Claude Code', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, datetime('now'))
+      ON CONFLICT(device, source, usage_date, model) DO UPDATE SET
+        input_tokens = excluded.input_tokens,
+        output_tokens = excluded.output_tokens,
+        cache_creation_tokens = excluded.cache_creation_tokens,
+        cache_read_tokens = excluded.cache_read_tokens,
+        cached_input_tokens = excluded.cached_input_tokens,
+        reasoning_output_tokens = excluded.reasoning_output_tokens,
+        total_tokens = excluded.total_tokens,
+        cost_usd = excluded.cost_usd,
+        updated_at = datetime('now')
+    `);
+    const clearDaily = db.prepare(`
+      DELETE FROM daily_usage
+      WHERE device = ? AND source = 'Claude Code' AND usage_date = ? AND model = ?
+    `);
+    for (const model of legacyModels) {
+      db.prepare(`DELETE FROM daily_usage WHERE source = 'Claude Code' AND lower(model) = ?`).run(model);
+    }
+    // token_events for the canonical model are exactly the Ark-era events, so
+    // scanning them is cheap; daily dates follow the collector's China-local
+    // calendar via localDateFromTimestamp.
+    const canonicalEvents = db.prepare(`
+      SELECT device, timestamp,
+        input_tokens AS inputTokens, output_tokens AS outputTokens,
+        cache_read_tokens AS cacheReadTokens, cache_creation_tokens AS cacheWriteTokens,
+        reasoning_tokens AS reasoningTokens
+      FROM token_events
+      WHERE source = 'Claude Code' AND model = ?
+    `).all(canonical);
+    const devices = new Set(db.prepare(`
+      SELECT DISTINCT device FROM token_events WHERE source = 'Claude Code'
+    `).all().map(row => row.device));
+    for (const device of devices) {
+      const perDate = new Map();
+      for (const event of canonicalEvents) {
+        if (event.device !== device) continue;
+        const date = localDateFromTimestamp(event.timestamp);
+        if (!affectedDates.has(date)) continue;
+        const totals = perDate.get(date) || {
+          inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0
+        };
+        totals.inputTokens += event.inputTokens;
+        totals.outputTokens += event.outputTokens;
+        totals.cacheReadTokens += event.cacheReadTokens;
+        totals.cacheWriteTokens += event.cacheWriteTokens;
+        totals.reasoningTokens += event.reasoningTokens;
+        perDate.set(date, totals);
+      }
+      for (const date of affectedDates) {
+        const totals = perDate.get(date);
+        if (!totals) {
+          clearDaily.run(device, date, canonical);
+          continue;
+        }
+        const totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheReadTokens
+          + totals.cacheWriteTokens + totals.reasoningTokens;
+        const cost = calculateCost(canonical, {
+          input: totals.inputTokens,
+          output: totals.outputTokens,
+          cacheRead: totals.cacheReadTokens,
+          cacheWrite: totals.cacheWriteTokens,
+          reasoning: totals.reasoningTokens
+        });
+        rebuildDaily.run(
+          device, date, canonical,
+          totals.inputTokens, totals.outputTokens,
+          totals.cacheWriteTokens, totals.cacheReadTokens,
+          totals.reasoningTokens, totalTokens, cost
+        );
+      }
     }
     db.exec('COMMIT');
   } catch (error) {

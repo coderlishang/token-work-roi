@@ -279,11 +279,25 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
           reasoning_tokens AS reasoningTokens
         FROM token_events WHERE event_id = ? AND device = ? AND source = ?
       `) : null;
+      // DeepSeek Harness reports cumulative per-session totals; stored rows are
+      // summed back up so the collector can emit only the newly accrued delta.
+      const storedSessionUsage = id === 'deepseek-harness' && db ? db.prepare(`
+        SELECT model, input_tokens AS inputTokens, output_tokens AS outputTokens,
+          cache_read_tokens AS cacheReadTokens, cache_creation_tokens AS cacheCreationTokens,
+          reasoning_tokens AS reasoningTokens
+        FROM token_events WHERE device = ? AND source = ? AND session_id = ?
+      `) : null;
       const collectorOptions = {
         changedAfterMs, metadataSessionPrefixes,
         getStoredResponse: storedResponse ? eventId => {
           const row = storedResponse.get(eventId, device, label);
           return row ? { model: row.model, tokens: eventTokens(row) } : null;
+        } : undefined,
+        getStoredSessionEvents: storedSessionUsage ? sessionId => {
+          return storedSessionUsage.all(device, label, sessionId).map(row => ({
+            model: row.model,
+            tokens: eventTokens(row)
+          }));
         } : undefined
       };
       if (typeof collectorModule.collectWithAudit === 'function') {
@@ -431,6 +445,16 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
         const rebuildWorkBuddy = removedWorkBuddyEvents > 0 || workBuddyEventModelsWouldChange(db, payload);
         const rebuildCodeBuddy = codeBuddyEventModelsWouldChange(db, payload);
         applyEventReconciliation(db, payload);
+        if (sourceSummary.id === 'deepseek-harness') {
+          // 清理 delta 计费修复前遗留的合成会话行，会话以事件原始 session_id 为准。
+          db.prepare(`
+            DELETE FROM session_usage
+            WHERE device = ? AND source = ?
+              AND session_id NOT IN (
+                SELECT DISTINCT session_id FROM token_events WHERE device = ? AND source = ?
+              )
+          `).run(device, label, device, label);
+        }
         dailyRows.forEach(row => upsertDaily(db, row));
         sessionRows.forEach(row => upsertSession(db, row));
         const deleteLegacyEvent = db.prepare(`
@@ -1381,7 +1405,9 @@ function mergeHistoricalEventUsage(db, payload, pricingData) {
       ])]
     : payloadSources(payload);
   for (const source of sources) {
-    if (payload.incremental && ['codex', 'workbuddy', 'codebuddy'].includes(payload.sourceSummary.id)) {
+    // Delta 计费采集器的 daily/session 必须由全部存储事件重建，不能只用本次增量。
+    if (payload.sourceSummary.id === 'deepseek-harness'
+      || (payload.incremental && ['codex', 'workbuddy', 'codebuddy'].includes(payload.sourceSummary.id))) {
       rebuildIncrementalEventUsage(db, payload, source, pricingData);
       continue;
     }
@@ -1427,7 +1453,7 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
   const days = new Map();
 
   const addEvent = ({ sessionId, usageDate, lastActivity, model, tokens, projectPath = null }) => {
-    const sessionKey = ['workbuddy', 'codebuddy'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
+    const sessionKey = ['workbuddy', 'codebuddy', 'deepseek-harness'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
     const session = sessions.get(sessionKey) || usageRow({
       device: payload.device, source, sessionId,
       lastActivity: lastActivity || null, projectPath, model: model || ''

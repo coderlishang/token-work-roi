@@ -71,7 +71,7 @@ export function LiveApp() {
   const generated = useMemo(() => formatChinaStandardTime(snapshot?.generatedAt), [snapshot?.generatedAt]);
   const statuslineCommand = `npx token-work statusline --format=text --window-minutes=${PULSE_WINDOW_MINUTES}`;
   const modelRows = (snapshot?.byModel || []).slice(0, 5);
-  const sourceRows = (snapshot?.bySource || []).slice(0, 5);
+  const sourceRows = foldSourceRows(snapshot?.bySource || []);
   const warnings = snapshot?.warnings || [];
   const timeline = pulse.timeline || [];
 
@@ -354,6 +354,19 @@ function ModelRows({ rows, totalTokens }) {
       })}
     </div>
   );
+}
+
+// The donut palette has five fixed hues; beyond the top four, fold the rest
+// into a single "其他" slice so colors never cycle and the chart keeps
+// representing 100% of the window's usage.
+function foldSourceRows(rows) {
+  if (rows.length <= 5) return rows;
+  const kept = rows.slice(0, 4).map(row => ({ ...row }));
+  const other = rows.slice(4).reduce((acc, row) => {
+    acc.totalTokens += Number(row.totalTokens || 0);
+    return acc;
+  }, { key: '其他', totalTokens: 0 });
+  return [...kept, other];
 }
 
 function SourceDonut({ rows, totalTokens }) {

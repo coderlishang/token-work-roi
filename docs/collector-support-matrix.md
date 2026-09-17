@@ -30,6 +30,7 @@ Yuanheng imports usage only when explicit token fields exist. It prefers missing
 | Qwen Code | experimental | 明确的结构化 usage JSON/JSONL | 否 | 是 | 仅明确词元字段 | 否 | 否 |
 | Kimi / Moonshot Coding CLI | experimental | 明确的结构化 usage JSON/JSONL | 否 | 是 | 仅明确词元字段 | 否 | 否 |
 | Goose | experimental | 明确的结构化 usage JSON/JSONL | 否 | 是 | 仅明确词元字段 | 否 | 否 |
+| DeepSeek Harness | experimental | `~/.dsh/storages/session_projcache` 中 harness 维护的会话累计 usage | 否 | 是 | harness 自报的累计词元总量 | 否 | 否 |
 | 结构化 JSON / CLI Bridge | import-only | 外部结构化 JSON 或显式 CLI bridge | 否 | 否 | 是 | 否 | 否 |
 | Amp | detected-only | 本机路径检测 | 否 | 是 | 否 | 否 | 否 |
 | Droid | detected-only | 本机路径检测 | 否 | 是 | 否 | 否 | 否 |
@@ -42,6 +43,8 @@ Yuanheng imports usage only when explicit token fields exist. It prefers missing
 | Kiro | detected-only | 本机路径检测 | 否 | 是 | 否 | 否 | 否 |
 | Grok Build | detected-only | 本机路径检测 | 否 | 是 | 否 | 否 | 否 |
 | Kilo | detected-only | 本机路径检测 | 否 | 是 | 否 | 否 | 否 |
+
+> 火山方舟 Coding Plan Auto 智能调度时，网关不回传实际路由的后端模型；此类用量归因到配置的请求模型（详见 local-collectors.md 的方舟说明）。
 
 “默认检查”表示快速启动的定时采集会处理该来源；“默认写入”表示通过可信门槛后会写入 SQLite。
 

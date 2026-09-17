@@ -32,10 +32,26 @@ These collectors can produce structured usage when reliable local metadata exist
 - Qwen Code
 - Kimi / Moonshot Coding CLI
 - Goose
+- DeepSeek Harness
 
 如果没有明确词元字段，元衡只报告检测状态，不写入用量。
 
 If explicit token fields are missing, Yuanheng reports detection status only and writes no usage.
+
+DeepSeek Harness reads only the harness-maintained cumulative `tokenUsage.totals` from `~/.dsh/storages/session_projcache/sessions/session-*.json`. The per-session event log (`session.v3.jsonl.zstd`) is only flushed when a session closes, so the projcache snapshot is the authoritative real-time source. Each collect emits only the usage accrued since the stored rows for a session (delta), attributed to the day the file was last written and the session's last-used model, so mid-session model switches and multi-day sessions stay additive without double counting. Sessions already fully imported produce no events. Messages, tool calls, working directories, and per-event logs are ignored. Enable it explicitly:
+
+```bash
+node src/cli.ts collect --dry-run --sources=deepseek-harness
+node src/cli.ts collect --apply --yes --sources=deepseek-harness
+```
+
+## 火山方舟 Coding Plan Auto 说明 / Volcengine Ark Coding Plan Auto Note
+
+火山方舟 Coding Plan 控制台切换为 Auto 智能调度后，Claude Code 日志中的模型字段会记为 `auto`。实测（2026-09 直接请求 coding-plan 端点验证）响应体与响应头都不携带实际路由的后端模型，本机任何位置都无法恢复真实后端模型。
+
+因此采集器把带方舟网关特征（usage 中的 `inference_geo` / `speed` / `iterations` 字段）的 `auto` 归因到 Claude Code settings 中配置的请求模型（例如 `ANTHROPIC_MODEL=ark-code-latest`），UI 与统计显示的就是这个具体模型名。未配置具体模型时回退为 `ark-auto`；不带方舟特征的裸 `auto` 保持未解析，不计价。历史数据中的 `auto` / `ark-auto` 行会在数据库打开时一次性修复到配置的具体模型：同一响应被旧版本重复采集到多个会话后缀（`:auto` / `:ark-auto` / 具体模型）下的重复事件按“相同时间戳+相同 token 计数”去重，孤儿行重命名；受影响日期的 daily 行从 token_events 按中国时区日期重建（修复前自动备份）。成本按套餐内 doubao-seed-2.1-turbo 参考价换算，仅作参考，不代表订阅计费。
+
+When the Ark Coding Plan console is switched to Auto smart scheduling, Claude Code logs model `auto`. Verified against the coding-plan endpoint (2026-09), neither the response body nor headers expose the routed backend model, so it cannot be recovered locally. The collector attributes such `auto` responses — recognized by the Ark gateway signature fields (`inference_geo` / `speed` / `iterations` in usage) — to the request model configured in Claude Code settings (e.g. `ANTHROPIC_MODEL=ark-code-latest`), which is what the UI displays. Without a configured model it falls back to `ark-auto`; a bare `auto` without Ark fields stays unpriced. Historical `auto` / `ark-auto` rows are repaired once when the database opens: duplicate events captured under multiple session suffixes (`:auto` / `:ark-auto` / the concrete model) are deduplicated by identical timestamp + token counters, orphan rows are renamed, and daily rows for affected dates are rebuilt from token_events on China-local dates (with an automatic backup). Cost uses the plan's doubao-seed-2.1-turbo reference rate — a reference conversion, not subscription billing.
 
 ## WorkBuddy 说明 / WorkBuddy Note
 
