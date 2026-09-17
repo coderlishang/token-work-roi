@@ -99,6 +99,12 @@ export const COLLECTOR_REGISTRY = [
     roots: () => configuredPaths('goose', 'roots', ['~/.config/goose', '~/.goose']),
     note: 'Experimental: supports explicit token metadata only; message bodies are not imported.'
   }),
+  experimentalCollector('deepseek-harness', 'DeepSeek Harness', {
+    module: './collectors/deepseek-harness.ts',
+    privacyLevel: 'metadata-only',
+    roots: () => configuredPaths('deepseekHarness', 'roots', ['~/.dsh']),
+    note: 'Experimental: reads only the harness-provided cumulative tokenUsage totals per session; message and tool content are ignored.'
+  }),
   stableCollector('workbuddy', 'WorkBuddy', './collectors/workbuddy.ts', {
     privacyLevel: 'metadata-only',
     roots: () => [
@@ -157,6 +163,16 @@ export function collectorById(id) {
 
 export function collectorLabel(id) {
   return collectorById(id)?.label || id || 'unknown';
+}
+
+// Sources the local UI collects in the background (start banner, live refresh
+// message, coverage dry-run defaults all derive from this single list).
+export const LIVE_COLLECT_SOURCES = 'claude,codex,workbuddy,codebuddy,deepseek-harness';
+
+export function liveCollectSourceNames() {
+  const labels = LIVE_COLLECT_SOURCES.split(',').map(collectorLabel);
+  if (labels.length <= 1) return labels.join(', ');
+  return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`;
 }
 
 export function detectCollectors() {

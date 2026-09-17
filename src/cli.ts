@@ -10,7 +10,7 @@ import { hostname } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { seedDemoDatabase } from './demo-seed.ts';
-import { auditExperimentalCollectors, detectCollectors } from './collector-registry.ts';
+import { auditExperimentalCollectors, detectCollectors, liveCollectSourceNames } from './collector-registry.ts';
 import { CCUSAGE_CLI_REPORTS, ccusageInvocation, runCcusageCliImportPlan } from './ccusage-bridge.ts';
 import { applyCcusageImport, assertCcusageImportCanApply, ccusageImportWouldChange, parseCcusageJsonText, planCcusageImport, readCcusageImportInput } from './ccusage-import.ts';
 import { createSqliteBackup, defaultDbPath, deleteBudgetProfile, listBudgetProfiles, openDb, openReadOnlyDb, upsertBudgetProfile } from './db.ts';
@@ -148,7 +148,7 @@ async function autoCommand({ route = '/', defaultOpenBrowser = true } = {}) {
     return;
   }
 
-  console.log('[token-work] Starting local UI. Trusted Claude, Codex, WorkBuddy, and CodeBuddy collection will run in the background.');
+  console.log(`[token-work] Starting local UI. Trusted ${liveCollectSourceNames()} collection will run in the background.`);
   await startCommand({ demo: false, dbPath, route, openBrowser, liveCollect: true });
 }
 
@@ -211,7 +211,7 @@ async function startCommand({ demo = false, dbPath = null, route = '/', openBrow
     console.log(`[token-work] API http://127.0.0.1:${apiPort}`);
     if (process.send) process.send({ type: 'ready', apiPort, uiPort });
     if (liveCollect && !demo) {
-      console.log(`[token-work] live collect refresh enabled every ${envLiveCollectIntervalSeconds()}s for Claude, Codex, WorkBuddy, and CodeBuddy.`);
+      console.log(`[token-work] live collect refresh enabled every ${envLiveCollectIntervalSeconds()}s for ${liveCollectSourceNames()}.`);
     }
     if (openBrowser) {
       setTimeout(() => openUrl(uiUrl), 900).unref?.();
@@ -1070,7 +1070,7 @@ function printHelp() {
     '',
     'Commands:',
     '  token-work [--db data/usage.sqlite] [--no-collect|--dry-run-only]',
-    '    Default real entry: UI starts first; trusted Claude, Codex, WorkBuddy, and CodeBuddy collection runs in the background every 300s.',
+    `    Default real entry: UI starts first; trusted ${liveCollectSourceNames()} collection runs in the background every 300s.`,
     '  token-work demo [--seed-only] [--db data/demo.sqlite]',
     '  token-work start [--db data/usage.sqlite] [--api-port 4173|0] [--ui-port 5173|0] [--no-collect|--dry-run-only]',
     '  token-work open [--db data/usage.sqlite] [--api-port 4173|0] [--ui-port 5173|0] [--no-collect|--dry-run-only]',

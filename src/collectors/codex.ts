@@ -256,11 +256,34 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
         if (totalUsage) {
         // Forked Codex sessions replay the parent's history when created.
         // Keep their parent total as the baseline until the child exceeds it.
-          if (awaitingForkBase && !summaryAtLeast(totalUsage, inheritedTotal)) {
+          const forkBase = awaitingForkBase;
+          if (forkBase && !summaryAtLeast(totalUsage, inheritedTotal)) {
             continue;
           }
           awaitingForkBase = false;
           increment = previousTotal ? summaryDelta(totalUsage, previousTotal) : lastUsage || totalUsage;
+        // token_count records whose last_token_usage is zero describe no new
+        // request. Billing the total delta against them would attribute
+        // counter restatements (observed up to 29M tokens on resumed threads,
+        // far beyond any context window) to a turn that did not happen.
+          if (lastUsage && summaryIsZero(lastUsage)) {
+            previousTotal = totalUsage;
+            continue;
+          }
+        // Healthy Codex counters emit one token_count per request, so each
+        // delta equals last_token_usage exactly (verified across real logs:
+        // thousands of exact matches, zero cases of delta exceeding it). A
+        // delta above last_token_usage means the counters jumped — a stale
+        // fork baseline or history replayed after a counter reset — and the
+        // gap would be billed as one giant turn. The record's own
+        // last_token_usage is the ground truth for that request.
+          if (increment && lastUsage && !summaryIsZero(lastUsage)) {
+            const deltaTokens = increment.input + increment.output + increment.cached + increment.reasoning;
+            const lastTokens = lastUsage.input + lastUsage.output + lastUsage.cached + lastUsage.reasoning;
+            if (deltaTokens > lastTokens + 10000) {
+              increment = lastUsage;
+            }
+          }
           if (!increment) {
             previousTotal = totalUsage;
             if (!lastUsage || summaryIsZero(lastUsage)) continue;

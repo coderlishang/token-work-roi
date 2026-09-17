@@ -13,6 +13,7 @@ import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
+import { configuredClaudeRequestModel } from '../claude-settings.ts';
 import { configuredBool, configuredPath, configuredPaths, envPathList } from '../collector-config.ts';
 import { calculateCost } from '../pricing.ts';
 import { localDateFromTimestamp, normalizeModelForGrouping } from './utils.ts';
@@ -159,7 +160,7 @@ async function parseSessionFile(filePath) {
       const dedupKey = dedupKeyForAssistant(obj);
       const anonymousCount = anonymousRecordCount.get(trimmed) || 0;
       anonymousRecordCount.set(trimmed, anonymousCount + 1);
-      const model = normalizeModelForGrouping(obj.message.model || obj.model || 'unknown');
+      const model = normalizeModelForGrouping(arkAutoModel(obj.message.model || obj.model, obj.message.usage));
       if (model === '<synthetic>' || tokenTotal(extractTokens(obj.message.usage)) === 0) continue;
 
       const record = {
@@ -190,6 +191,21 @@ async function parseSessionFile(filePath) {
   }
 
   return records;
+}
+
+// Volcengine Ark's Coding Plan "Auto" scheduling answers with model "auto"
+// and stamps Ark-only gateway fields on usage (inference_geo / speed /
+// iterations). Only then is "auto" attributed to Ark; a bare "auto" from any
+// other gateway stays unresolved instead of being mispriced. Ark does not
+// expose the routed backend model in the response, so the specific model
+// shown here is the configured request model (e.g. ark-code-latest). When no
+// request model is configured locally, fall back to the ark-auto label.
+function arkAutoModel(model, usage) {
+  if (!model || String(model).trim().toLowerCase() !== 'auto') return model || 'unknown';
+  const arkSignature = usage && typeof usage === 'object'
+    && (Object.hasOwn(usage, 'inference_geo') || Object.hasOwn(usage, 'speed') || Array.isArray(usage.iterations));
+  if (!arkSignature) return model;
+  return configuredClaudeRequestModel() || 'ark-auto';
 }
 
 function dedupKeyForAssistant(obj) {
@@ -290,7 +306,15 @@ function collectFromFiles(files, pricingData) {
       [...new Set(records.map(record => normalizeModelForGrouping(record.model)))]
         .map(model => [model, `${sessionPrefix}:${model}`])
     );
-    const legacySessionIds = [...modelSessionIds.values()];
+    // Earlier releases stored Ark "auto" responses under the raw "auto" and
+    // the interim "ark-auto" session/model labels. Include those variants so
+    // re-collecting the same response replaces its stale copies even when the
+    // current parse no longer produces those model names.
+    const legacyVariants = new Set(modelSessionIds.values());
+    for (const variant of ['auto', 'ark-auto']) {
+      legacyVariants.add(`${sessionPrefix}:${variant}`);
+    }
+    const legacySessionIds = [...legacyVariants];
     managedEventSessionPrefixes.add(`${sessionPrefix}:`);
 
     for (let index = 0; index < records.length; index += 1) {

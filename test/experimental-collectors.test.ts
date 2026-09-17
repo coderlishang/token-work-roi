@@ -66,6 +66,7 @@ test('collectors audit CLI emits safe summary without full paths', async () => {
   writeFileSync(configPath, JSON.stringify({
     collectors: {
       ...Object.fromEntries(EXPERIMENTAL.map(id => [id, { roots: [join(root, id)] }])),
+      deepseekHarness: { roots: [join(dir, 'no-deepseek-harness-data')] },
       workbuddy: { tracesDir: '/nonexistent/workbuddy/traces' }
     }
   }), 'utf8');
@@ -76,7 +77,7 @@ test('collectors audit CLI emits safe summary without full paths', async () => {
     });
     assert.equal(result.code, 0, result.stderr);
     const json = JSON.parse(result.stdout);
-    assert.equal(json.collectors.length, EXPERIMENTAL.length);
+    assert.equal(json.collectors.length, EXPERIMENTAL.length + 1);
     assert.equal(json.totals.usableTokenRecords, EXPERIMENTAL.length);
     assert.equal(json.totals.skippedNoTokenRecords, EXPERIMENTAL.length);
     assert.equal(json.totals.skippedConversationLikeRecords, 0);

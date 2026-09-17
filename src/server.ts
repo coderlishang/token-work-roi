@@ -58,7 +58,7 @@ import {
   upsertWorkItem
 } from './db.ts';
 import { loadCollectorConfig } from './collector-config.ts';
-import { detectCollectors } from './collector-registry.ts';
+import { detectCollectors, LIVE_COLLECT_SOURCES } from './collector-registry.ts';
 import { runPrivacyCheck } from './privacy-check.ts';
 import { buildModelPolicy, formatModelPolicyMarkdown } from './model-policy.ts';
 import { buildLiveSnapshot } from './live.ts';
@@ -539,7 +539,7 @@ async function handleApi(req, url, res) {
       return;
     }
     const coverage = await collectionCoverageDryRun({
-      sources: url.searchParams.get('sources') || 'claude,codex,workbuddy,codebuddy,cursor'
+      sources: url.searchParams.get('sources') || `${LIVE_COLLECT_SOURCES},cursor`
     });
     lastCoverageGate = summarizeCoverageGate(inputRecord(coverage));
     sendJson(res, coverage);
@@ -1104,7 +1104,7 @@ function startCollection({ reason = 'manual' } = {}) {
     return false;
   }
 
-  const sources = 'claude,codex,workbuddy,codebuddy';
+  const sources = LIVE_COLLECT_SOURCES;
   const args = [collectionEntryPoint(), '--apply', '--yes', '--sources', sources, '--json'];
   const device = collectionDevice();
   if (device) args.push('--device', device);
@@ -1752,7 +1752,7 @@ function summarizeCollectState(summary) {
   };
 }
 
-function collectionCoverageDryRun({ sources = 'claude,codex,workbuddy,codebuddy,cursor' } = {}) {
+function collectionCoverageDryRun({ sources = `${LIVE_COLLECT_SOURCES},cursor` } = {}) {
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, [
       collectionEntryPoint(),
