@@ -398,7 +398,7 @@ async function handleApi(req, url, res) {
     const daily = rawDaily.map(d => attachOfficialPricing({
       ...d,
       projectPath: projMap.get(`${d.device}::${d.source}`)?.project || null
-    }, d.model, providerFromSource(d.source), pricingData));
+    }, d.model, providerFromSource(d.source), pricingData, d.usageDate == null ? null : String(d.usageDate)));
     const pricedSessions = sessions.map(s => attachOfficialPricing(
       s,
       s.model,
@@ -1325,7 +1325,8 @@ async function handleIngest(req, res) {
       row,
       row.model,
       providerFromSource(row.source),
-      pricingData
+      pricingData,
+      row.usageDate || null
     ));
     const sessionRows = rawSessionRows.map(row => attachOfficialPricing(
       row,

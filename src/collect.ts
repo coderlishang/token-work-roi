@@ -524,7 +524,7 @@ function repairCodexReasoningAccounting(db, pricingData) {
   for (const row of events) {
     const correction = Number(row.correction || 0);
     if (!correction) continue;
-    const cost = calculateCost(row.model, { reasoning: correction }, pricingData);
+    const cost = calculateCost(row.model, { reasoning: correction }, pricingData, null, row.usageDate);
     addCorrection(daily, [row.device, row.source, row.usageDate, row.model], correction, cost);
     addCorrection(sessions, [row.device, row.source, row.sessionId], correction, cost);
   }
@@ -703,12 +703,13 @@ function rebuildNativeEventUsage(db, payload, pricingData) {
     const daily = usageRow({
       device: payload.device, source, usageDate: row.usageDate, model: row.model || ''
     });
-    addUsage(daily, tokens, calculateCost(row.model || '', tokens, pricingData));
+    addUsage(daily, tokens, calculateCost(row.model || '', tokens, pricingData, null, row.usageDate));
     upsertDaily(db, daily);
   }
 
   const sessionRows = db.prepare(`
     SELECT session_id AS sessionId, model, MAX(timestamp) AS lastActivity,
+      date(timestamp, '+8 hours') AS usageDate,
       COALESCE(SUM(input_tokens), 0) AS inputTokens,
       COALESCE(SUM(output_tokens), 0) AS outputTokens,
       COALESCE(SUM(cache_read_tokens), 0) AS cacheReadTokens,
@@ -716,7 +717,7 @@ function rebuildNativeEventUsage(db, payload, pricingData) {
       COALESCE(SUM(reasoning_tokens), 0) AS reasoningOutputTokens
     FROM token_events
     WHERE device = ? AND source = ?
-    GROUP BY session_id, model
+    GROUP BY session_id, usageDate, model
   `).all(payload.device, source);
   const latestModel = db.prepare(`
     SELECT model FROM token_events
@@ -739,7 +740,8 @@ function rebuildNativeEventUsage(db, payload, pricingData) {
       device: payload.device, source, sessionId: row.sessionId,
       lastActivity: row.lastActivity, projectPath: null, model
     });
-    addUsage(session, tokens, calculateCost(row.model, tokens, pricingData));
+    // 会话按日期分组累计成本，跨价格变更日的会话也能按当天价复现
+    addUsage(session, tokens, calculateCost(row.model, tokens, pricingData, null, row.usageDate));
     if (row.lastActivity > session.lastActivity) session.lastActivity = row.lastActivity;
     sessions.set(row.sessionId, session);
   }
@@ -1469,7 +1471,7 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
       device: payload.device, source, sessionId,
       lastActivity: lastActivity || null, projectPath, model: model || ''
     });
-    addUsage(session, tokens, calculateCost(model || '', tokens, pricingData));
+    addUsage(session, tokens, calculateCost(model || '', tokens, pricingData, null, usageDate));
     if (lastActivity && (!session.lastActivity || lastActivity > session.lastActivity)) {
       session.lastActivity = lastActivity;
       session.model = model || '';
@@ -1480,7 +1482,7 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
     const day = days.get(dayKey) || usageRow({
       device: payload.device, source, usageDate: usageDate || 'unknown', model: model || ''
     });
-    addUsage(day, tokens, calculateCost(model || '', tokens, pricingData));
+    addUsage(day, tokens, calculateCost(model || '', tokens, pricingData, null, usageDate));
     days.set(dayKey, day);
   };
 
@@ -1541,7 +1543,7 @@ function mergeHistoricalEventUsageForSource(db, payload, source, pricingData) {
       device: payload.device, source, sessionId: row.sessionId,
       lastActivity: row.lastActivity, projectPath: null, model: row.model || ''
     });
-    addUsage(session, tokens, calculateCost(row.model || '', tokens, pricingData));
+    addUsage(session, tokens, calculateCost(row.model || '', tokens, pricingData, null, row.usageDate));
     if (row.lastActivity > session.lastActivity) session.lastActivity = row.lastActivity;
     sessions.set(row.sessionId, session);
 
@@ -1549,7 +1551,7 @@ function mergeHistoricalEventUsageForSource(db, payload, source, pricingData) {
     const day = days.get(dayKey) || usageRow({
       device: payload.device, source, usageDate: row.usageDate, model: row.model || ''
     });
-    addUsage(day, tokens, calculateCost(row.model || '', tokens, pricingData));
+    addUsage(day, tokens, calculateCost(row.model || '', tokens, pricingData, null, row.usageDate));
     days.set(dayKey, day);
   }
   for (const session of sessions.values()) payload.sessionRows.push(session);

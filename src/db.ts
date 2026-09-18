@@ -278,7 +278,7 @@ function repairArkAutoModelNames(db, dbPath) {
           cacheRead: totals.cacheReadTokens,
           cacheWrite: totals.cacheWriteTokens,
           reasoning: totals.reasoningTokens
-        });
+        }, null, null, date);
         rebuildDaily.run(
           device, date, canonical,
           totals.inputTokens, totals.outputTokens,

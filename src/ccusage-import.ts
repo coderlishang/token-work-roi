@@ -93,7 +93,7 @@ export function planCcusageImport(payload, options: ImportOptions = {}) {
         cacheRead: tokens.cacheReadTokens,
         cacheWrite: tokens.cacheCreationTokens,
         reasoning: tokens.reasoningOutputTokens
-      }, { provider: providerFromSource(source) });
+      }, { provider: providerFromSource(source), usageDate });
 
       if (!cost.priced && number(part.costUSD ?? part.totalCost) > 0) {
         warnings.push({
@@ -628,7 +628,7 @@ function migrateLegacyCcusageUtcDailyUsage(db, plan) {
       cacheRead: stored.cacheReadTokens,
       cacheWrite: stored.cacheCreationTokens,
       reasoning: stored.reasoningTokens
-    }, { provider: providerFromSource(row.source) }).totalUSD;
+    }, { provider: providerFromSource(row.source), usageDate: oldUsageDate }).totalUSD;
     legacyByDaily.set(key, legacy);
   }
 
@@ -722,7 +722,7 @@ function removeStaleCcusageDailyUsage(db, plan, staleEvents) {
       cacheRead: row.cacheReadTokens,
       cacheWrite: row.cacheCreationTokens,
       reasoning: row.reasoningTokens
-    }, { provider: providerFromSource(row.source) }).totalUSD;
+    }, { provider: providerFromSource(row.source), usageDate }).totalUSD;
     staleByDaily.set(key, existing);
   }
 
