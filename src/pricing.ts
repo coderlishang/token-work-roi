@@ -6,7 +6,7 @@
  * Unknown or research-preview models return 0 and are reported as unpriced.
  */
 
-import { canonicalModelName } from './collectors/utils.ts';
+import { canonicalModelName } from './model-name.ts';
 
 const MTOK = 1_000_000;
 const VERIFIED_AT = '2026-09-16';

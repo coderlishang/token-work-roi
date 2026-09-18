@@ -303,7 +303,7 @@ function collectFromFiles(files, pricingData) {
     const sessionFileId = basename(filePath).replace(/\.jsonl$/i, '');
     const sessionPrefix = `local:${CLIENT_KEY}:${hashableSessionPart(sessionFileId)}`;
     const modelSessionIds = new Map(
-      [...new Set(records.map(record => normalizeModelForGrouping(record.model)))]
+      [...new Set(records.map(record => normalizeModelForGrouping(record.model, recordDate(record))))]
         .map(model => [model, `${sessionPrefix}:${model}`])
     );
     // Earlier releases stored Ark "auto" responses under the raw "auto" and
@@ -320,7 +320,7 @@ function collectFromFiles(files, pricingData) {
     for (let index = 0; index < records.length; index += 1) {
       const record = records[index];
       const tokens = extractTokens(record.usage);
-      const model = normalizeModelForGrouping(record.model);
+      const model = normalizeModelForGrouping(record.model, recordDate(record));
       const normalized = {
         ...record,
         model,
@@ -451,7 +451,7 @@ function workspaceKeyFromPath(root, filePath) {
 
 function aggregateRecord(record, dailyMap, sessionMap, pricingData) {
   const date = localDateFromTimestamp(record.timestamp);
-  const model = normalizeModelForGrouping(record.model);
+  const model = normalizeModelForGrouping(record.model, recordDate(record));
   const tokens = record.tokens || extractTokens(record.usage);
   const costUSD = calculateCost(model, tokens, pricingData);
 
@@ -501,7 +501,7 @@ function emptyAuditSummary() {
 }
 
 function tokenEventFor(record) {
-  const model = normalizeModelForGrouping(record.model);
+  const model = normalizeModelForGrouping(record.model, recordDate(record));
   const eventId = claudeEventId({ ...record, model, sessionId: record.sessionId });
   return {
     eventId,
@@ -523,6 +523,10 @@ function tokenEventFor(record) {
 
 function claudeEventId({ sessionId, identityKey }) {
   return `claude:${stableHash({ sessionId, identityKey })}`;
+}
+
+function recordDate(record) {
+  return record.timestamp ? localDateFromTimestamp(record.timestamp) : null;
 }
 
 function tokenTotal(tokens) {

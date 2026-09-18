@@ -8,9 +8,9 @@ import {
   stableCollectors
 } from '../src/collector-registry.ts';
 
-test('collector registry exposes eight stable sources', () => {
+test('collector registry exposes nine stable sources', () => {
   const stable = stableCollectors().map(item => item.id).sort();
-  assert.deepEqual(stable, ['claude', 'codebuddy', 'codex', 'gemini', 'hermes', 'openclaw', 'opencode', 'workbuddy']);
+  assert.deepEqual(stable, ['claude', 'codebuddy', 'codex', 'gemini', 'hermes', 'openclaw', 'opencode', 'workbuddy', 'zcode']);
   assert.equal(collectorLabel('codex'), 'Codex');
 });
 

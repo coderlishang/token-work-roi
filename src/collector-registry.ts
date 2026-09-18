@@ -69,6 +69,10 @@ export const COLLECTOR_REGISTRY = [
     privacyLevel: 'metadata-only',
     roots: () => [configuredPath('hermes', 'dbPath', '~/.hermes/state.db')]
   }),
+  stableCollector('zcode', 'ZCode', './collectors/zcode.ts', {
+    privacyLevel: 'metadata-only',
+    roots: () => configuredPaths('zcode', 'roots', ['~/.zcode/cli/rollout'])
+  }),
   experimentalCollector('cursor', 'Cursor', {
     module: './collectors/cursor.ts',
     privacyLevel: 'metadata-only',
@@ -167,7 +171,7 @@ export function collectorLabel(id) {
 
 // Sources the local UI collects in the background (start banner, live refresh
 // message, coverage dry-run defaults all derive from this single list).
-export const LIVE_COLLECT_SOURCES = 'claude,codex,workbuddy,codebuddy,deepseek-harness';
+export const LIVE_COLLECT_SOURCES = 'claude,codex,workbuddy,codebuddy,deepseek-harness,zcode';
 
 export function liveCollectSourceNames() {
   const labels = LIVE_COLLECT_SOURCES.split(',').map(collectorLabel);

@@ -757,6 +757,210 @@ test('collect reads the Codex Desktop model from thread settings before token co
   }
 });
 
+test('collect maps proxy model slugs to the real backing model via configured aliases', async () => {
+  const fixture = createCollectorFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'aliased-session.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'aliased-settings', originator: 'Codex Desktop' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-terra' } }
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-06-17T02:00:00.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 80, output_tokens: 20 },
+            last_token_usage: { input_tokens: 80, output_tokens: 20 }
+          }
+        }
+      })
+    ].join('\n'), 'utf8');
+
+    const first = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(first.code, 0, first.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.deepEqual(db.prepare(`
+        SELECT model, COUNT(*) AS count
+        FROM token_events
+        WHERE session_id LIKE 'local:codex:aliased-settings:%'
+        GROUP BY model
+      `).all().map(row => ({ ...row })), [{ model: 'gpt-5.6-terra', count: 1 }]);
+    } finally {
+      db.close();
+    }
+
+    const configPath = join(fixture.dir, 'collectors.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    config.modelAliases = { 'gpt-5.6-terra': 'glm-5.3-flash' };
+    writeFileSync(configPath, JSON.stringify(config), 'utf8');
+
+    const second = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(second.code, 0, second.stderr);
+
+    const reconciled = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.deepEqual(reconciled.prepare(`
+        SELECT model, COUNT(*) AS count
+        FROM token_events
+        WHERE session_id LIKE 'local:codex:aliased-settings:%'
+        GROUP BY model
+      `).all().map(row => ({ ...row })), [{ model: 'glm-5.3-flash', count: 1 }]);
+      assert.deepEqual(reconciled.prepare(`
+        SELECT COALESCE(SUM(total_tokens), 0) AS totalTokens
+        FROM daily_usage
+        WHERE source = 'Codex Desktop'
+      `).all().map(row => ({ ...row })), [{ totalTokens: 100 }]);
+    } finally {
+      reconciled.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+test('collect applies cutoff-scoped aliases only to usage on and after the cutoff', async () => {
+  const fixture = createCollectorFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'scoped-alias-session.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'scoped-alias-settings', originator: 'Codex Desktop' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-terra' } }
+      }),
+      // cutoff 前请求：保留真实历史 slug
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-06-17T02:00:00.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 80, output_tokens: 20 },
+            last_token_usage: { input_tokens: 80, output_tokens: 20 }
+          }
+        }
+      }),
+      // 同会话 cutoff 后请求：被别名重映射
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-06-18T02:00:00.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 180, output_tokens: 70 },
+            last_token_usage: { input_tokens: 100, output_tokens: 50 }
+          }
+        }
+      })
+    ].join('\n'), 'utf8');
+
+    const configPath = join(fixture.dir, 'collectors.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    config.modelAliases = { 'gpt-5.6-terra': { to: 'glm-5.3-flash', from: '2026-06-18' } };
+    writeFileSync(configPath, JSON.stringify(config), 'utf8');
+
+    const run = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(run.code, 0, run.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.deepEqual(db.prepare(`
+        SELECT model, COUNT(*) AS count
+        FROM token_events
+        WHERE session_id LIKE 'local:codex:scoped-alias-settings:%'
+        GROUP BY model ORDER BY model
+      `).all().map(row => ({ ...row })), [
+        { model: 'glm-5.3-flash', count: 1 },
+        { model: 'gpt-5.6-terra', count: 1 }
+      ]);
+      assert.deepEqual(db.prepare(`
+        SELECT usage_date, model, SUM(total_tokens) AS totalTokens
+        FROM daily_usage
+        WHERE source = 'Codex Desktop'
+        GROUP BY usage_date, model ORDER BY usage_date
+      `).all().map(row => ({ ...row })), [
+        { usage_date: '2026-06-17', model: 'gpt-5.6-terra', totalTokens: 100 },
+        { usage_date: '2026-06-18', model: 'glm-5.3-flash', totalTokens: 150 }
+      ]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+test('collect forces a full rescan when model aliases change under incremental refresh', async () => {
+  const fixture = createCollectorFixture();
+  const sessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'alias-incremental.jsonl');
+  try {
+    writeFileSync(sessionPath, [
+      JSON.stringify({ type: 'session_meta', payload: { id: 'alias-incremental-settings', originator: 'Codex Desktop' } }),
+      JSON.stringify({
+        type: 'event_msg',
+        payload: { type: 'thread_settings_applied', thread_settings: { model: 'gpt-5.6-terra' } }
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-06-17T02:00:00.000Z',
+        payload: {
+          type: 'token_count',
+          info: {
+            total_token_usage: { input_tokens: 60, output_tokens: 40 },
+            last_token_usage: { input_tokens: 60, output_tokens: 40 }
+          }
+        }
+      })
+    ].join('\n'), 'utf8');
+
+    const first = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], fixture.env);
+    assert.equal(first.code, 0, first.stderr);
+
+    const configPath = join(fixture.dir, 'collectors.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    config.modelAliases = { 'gpt-5.6-terra': 'glm-5.3-flash' };
+    writeFileSync(configPath, JSON.stringify(config), 'utf8');
+
+    // UI 采集走增量，未变文件靠别名指纹强制全量才会被重解析
+    const incremental = await runNode([
+      'src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'
+    ], {
+      ...fixture.env,
+      TOKEN_WORK_COLLECT_REASON: 'manual',
+      TOKEN_WORK_SCHEDULED_INCREMENTAL: '1'
+    });
+    assert.equal(incremental.code, 0, incremental.stderr);
+
+    const db = new DatabaseSync(fixture.dbPath, { readOnly: true });
+    try {
+      assert.deepEqual(db.prepare(`
+        SELECT model, COUNT(*) AS count
+        FROM token_events
+        WHERE session_id LIKE 'local:codex:alias-incremental-settings:%'
+        GROUP BY model
+      `).all().map(row => ({ ...row })), [{ model: 'glm-5.3-flash', count: 1 }]);
+    } finally {
+      db.close();
+    }
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
 test('collect removes an unlinked zero-token Codex session with no model', async () => {
   const fixture = createCollectorFixture();
   const emptySessionPath = join(fixture.codexHome, 'sessions', '2026', '06', '17', 'desktop-empty.jsonl');
