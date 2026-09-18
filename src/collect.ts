@@ -3,7 +3,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import { hostname } from 'node:os';
 import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { createSqliteBackup, defaultDbPath, openDb, recordRun, repairUsageTotals, upsertDaily, upsertSession, upsertTokenEvent, usageTotalsNeedRepair } from './db.ts';
+import { createSqliteBackup, defaultDbPath, getCollectorMeta, openDb, recordRun, repairUsageTotals, setCollectorMeta, upsertDaily, upsertSession, upsertTokenEvent, usageTotalsNeedRepair } from './db.ts';
+import { loadCollectorConfig } from './collector-config.ts';
 import { calculateCost, loadPricing } from './pricing.ts';
 import { canonicalModelName, localDateFromTimestamp } from './collectors/utils.ts';
 import { collectableCollectors, collectorLabel, enabledCollectorIds } from './collector-registry.ts';
@@ -58,7 +59,7 @@ async function main() {
   const pricingData = await loadPricing(pricingCachePath);
   const enabled = enabledCollectors(args);
   const scheduled = isScheduledCollection();
-  const incrementalRefresh = isIncrementalMetadataRefresh();
+  let incrementalRefresh = isIncrementalMetadataRefresh();
   const fullRefreshSources = forcedFullRefreshSources();
   const includeExperimental = Boolean(args.sources || args.collectors || args.experimental);
   const collectors = collectableCollectors({ includeExperimental }).filter(({ id }) => enabled.has(id));
@@ -107,6 +108,7 @@ async function main() {
   };
 
   let collectionLock = null;
+  let modelAliasesFingerprint = null;
 
   try {
     if (mode === 'apply') {
@@ -114,6 +116,11 @@ async function main() {
       db = openDb(args.db);
       if (enabled.has('codex') && codexAccountingUpgradeNeeded(db)) {
         fullRefreshSources.add('codex');
+      }
+      // 增量按 mtime 跳过未变文件，别名变更须强制全量重映射一次
+      modelAliasesFingerprint = JSON.stringify(loadCollectorConfig().modelAliases ?? null);
+      if (incrementalRefresh && getCollectorMeta(db, 'modelAliasesFingerprint') !== modelAliasesFingerprint) {
+        incrementalRefresh = false;
       }
       summary.before = countRows(db);
     }
@@ -138,6 +145,10 @@ async function main() {
   } finally {
     try {
       if (db) {
+        if (mode === 'apply' && modelAliasesFingerprint !== null
+          && !summary.sources.some(source => source.status === 'error')) {
+          setCollectorMeta(db, 'modelAliasesFingerprint', modelAliasesFingerprint);
+        }
         summary.after = countRows(db);
         db.close();
       }

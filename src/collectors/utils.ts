@@ -1,3 +1,5 @@
+import { loadCollectorConfig } from '../collector-config.ts';
+
 const REASONING_TIERS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'auto', 'none']);
 const CHINA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Shanghai',
@@ -25,7 +27,7 @@ export function localDateFromTimestamp(value, fallback = 'unknown') {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-export function normalizeModelForGrouping(modelId) {
+export function normalizeModelForGrouping(modelId, usageDate = null) {
   let name = String(modelId || 'unknown').trim().toLowerCase();
   if (!name) return 'unknown';
 
@@ -52,22 +54,93 @@ export function normalizeModelForGrouping(modelId) {
   }
 
   if (['hy3-x', 'hy3_x', 'hunyuan-hy3-x', 'hunyuan_hy3_x'].includes(name)) {
-    return 'hy3';
+    return applyConfiguredModelAlias('hy3', usageDate);
   }
 
   // WorkBuddy recorded this release label for the Kimi K3 model. Keep the
   // canonical model name stable without treating later K3 variants as K3.
-  if (name === 'kimi-k3-1') return 'kimi-k3';
+  if (name === 'kimi-k3-1') return applyConfiguredModelAlias('kimi-k3', usageDate);
 
+  return applyConfiguredModelAlias(name, usageDate);
+}
+
+/**
+ * 代理供应商让客户端记录假 slug，真实模型不落盘。collectors.json 顶层
+ * modelAliases 两种形态："slug": "real"（全局），或 "slug": {to, from}
+ * （仅本地日期 ≥ from 重映射，用于供应商切换前后同 slug 是不同模型）。
+ * 键匹配归一化分组名，档位/日期后缀变体同样命中；usageDate 非严格
+ * YYYY-MM-DD（含 'unknown' 回退值）时 scoped 条目一律惰性。
+ */
+let aliasState = null;
+
+function applyConfiguredModelAlias(name, usageDate = null) {
+  const aliases = modelAliasMap();
+  if (!aliases) return name;
+  const base = baseModelKey(name);
+  const hit = aliasLookup(aliases.unscoped, name, base);
+  if (hit) return hit;
+  if (usageDate && aliases.scoped.length) {
+    // cutoff 是字典序比较，非严格日期（如 'unknown'）不得通过
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(usageDate)) return name;
+    let scopedTo = null;
+    for (const entry of aliases.scoped) {
+      if (entry.from <= usageDate && (entry.key === name || entry.key === base)) {
+        scopedTo = entry.to;
+      }
+    }
+    if (scopedTo) return scopedTo;
+  }
   return name;
 }
 
-// Keep vendor model names separate from the IDs used to deduplicate records.
-export function canonicalModelName(model: string) {
-  return /^glm-\d+[.-]\d+(?:-|$)/i.test(model)
-    ? model.toLowerCase().replace(/^(glm-\d+)[.-](\d+)(?=-|$)/, '$1.$2')
-    : model;
+// 档位后缀变体（"slug (high)"）归属同一基模型
+function baseModelKey(name) {
+  const openIndex = name.lastIndexOf('(');
+  if (openIndex > 0 && name.endsWith(')')) {
+    const tier = name.slice(openIndex + 1, -1).trim();
+    if (REASONING_TIERS.has(tier)) {
+      return name.slice(0, openIndex).trim();
+    }
+  }
+  return null;
 }
+
+function aliasLookup(map, name, base = baseModelKey(name)) {
+  if (!map) return null;
+  const hit = map.get(name);
+  if (hit) return hit;
+  return base ? (map.get(base) || null) : null;
+}
+
+function modelAliasMap() {
+  const raw = loadCollectorConfig().modelAliases;
+  if (aliasState && aliasState.source === raw) return aliasState.map;
+  const unscoped = new Map();
+  const scoped = [];
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [slug, target] of Object.entries(raw)) {
+      const key = String(slug).trim().toLowerCase();
+      if (!key) continue;
+      if (target && typeof target === 'object' && !Array.isArray(target)) {
+        const to = String(target.to ?? '').trim().toLowerCase();
+        const from = String(target.from ?? '').trim();
+        if (to && from && key !== to && /^\d{4}-\d{2}-\d{2}$/.test(from)) scoped.push({ from, to, key });
+      } else {
+        const to = String(target ?? '').trim().toLowerCase();
+        if (to && key !== to) unscoped.set(key, to);
+      }
+    }
+  }
+  scoped.sort((left, right) => left.from.localeCompare(right.from));
+  aliasState = {
+    source: raw,
+    map: (unscoped.size || scoped.length) ? { unscoped, scoped } : null
+  };
+  return aliasState.map;
+}
+
+// 规范名与去重 ID 分离；实现在零依赖叶子模块，浏览器经 pricing.ts 可达
+export { canonicalModelName } from '../model-name.ts';
 
 export function canonicalProvider(raw) {
   if (typeof raw !== 'string') return null;

@@ -396,6 +396,11 @@ function initSchema(db) {
       command TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS collector_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS daily_usage (
       device TEXT NOT NULL,
       source TEXT NOT NULL,
@@ -711,6 +716,18 @@ export function recordRun(db, row) {
     run.collectedAt,
     run.command
   );
+}
+
+export function getCollectorMeta(db, key) {
+  const row = db.prepare('SELECT value FROM collector_meta WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+
+export function setCollectorMeta(db, key, value) {
+  db.prepare(`
+    INSERT INTO collector_meta(key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(key, value);
 }
 
 export function normalizeDailyUsage(row: InputRecord = {}) {

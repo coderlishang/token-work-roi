@@ -245,7 +245,12 @@ async function parseSessionFile(filePath, sessionId, inheritedTotal = null, mini
       // A tail can begin in the middle of a session. Ignore rows before its
       // first model context instead of assigning them to an unknown model.
         if (!modelValue && tailBytes > 0) continue;
-        const model = normalizeModelForGrouping(modelValue || 'unknown');
+        const model = normalizeModelForGrouping(
+          modelValue || 'unknown',
+          typeof entry.timestamp === 'string' && entry.timestamp
+            ? localDateFromTimestamp(entry.timestamp)
+            : null
+        );
 
         currentModel = model;
 

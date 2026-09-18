@@ -12,6 +12,7 @@ interface ScheduledCollectConfig {
 interface CollectorConfigRoot {
   collectors?: Record<string, Record<string, unknown>>;
   scheduledCollect?: ScheduledCollectConfig;
+  modelAliases?: Record<string, string | { to: string; from: string }>;
 }
 
 let cachedConfig: CollectorConfigRoot | undefined;
