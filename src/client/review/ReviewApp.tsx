@@ -95,8 +95,9 @@ export function ReviewApp() {
       .catch(e => { setError(e.message); setLoading(false); });
   }, []);
 
+  // 挂载即强刷:乐观导航下旧缓存先行渲染,借 in-flight 去重复用导航预热的请求,新数据到达后自动上屏
   useEffect(() => {
-    loadData(false);
+    loadData();
   }, [loadData]);
 
   useEffect(() => {
@@ -121,7 +122,8 @@ export function ReviewApp() {
     );
   }
 
-  if (error) {
+  // 有可显示的缓存数据时刷新失败只提示不整页报错,保留旧数据供浏览
+  if (error && !data) {
     return (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -139,7 +141,21 @@ export function ReviewApp() {
     );
   }
 
-  return <ReviewDashboard rawData={data} onReloadData={loadData}/>;
+  return (
+    <>
+      {error && (
+        <div role="alert" style={{
+          position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 40,
+          padding: '8px 16px', borderRadius: 8, fontSize: 13,
+          background: 'var(--paper-2)', border: '1px solid oklch(0.65 0.16 25)',
+          color: 'oklch(0.45 0.15 25)', boxShadow: '0 4px 16px rgba(0,0,0,.12)'
+        }}>
+          刷新失败：{error}，当前显示缓存数据，可重新进入本页重试
+        </div>
+      )}
+      <ReviewDashboard rawData={data} onReloadData={loadData}/>
+    </>
+  );
 }
 
 function ReviewDashboard({ rawData, onReloadData }) {

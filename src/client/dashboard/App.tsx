@@ -91,7 +91,7 @@ export function App({ routeMode = 'dashboard' }) {
   const [collectionCoverage, setCollectionCoverage] = useState(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState(null);
-  const lastCompletedCollectionRef = useRef(null);
+  const lastCompletedCollectionRef = useRef(undefined); // undefined=未建基线;null=无采集;string=已见过的完成时间
   const waitingForCollectionRef = useRef(false);
 
   // ───── Load data from API ─────
@@ -106,7 +106,8 @@ export function App({ routeMode = 'dashboard' }) {
       .finally(() => setRefreshing(false));
   }, []);
 
-  useEffect(() => { loadData(false); }, [loadData]);
+  // 挂载即强刷:乐观导航下旧缓存先行渲染,这里借 in-flight 去重复用导航预热的请求,新数据到达后自动上屏
+  useEffect(() => { loadData(); }, [loadData]);
 
   const loadCollectionCoverage = useCallback(() => {
     setCoverageLoading(true);
@@ -143,14 +144,17 @@ export function App({ routeMode = 'dashboard' }) {
           setCollecting(false);
           setCollectStatus({ type: 'ok', message: summarizeCollectOutput(data.stdout) });
           const collectionFinishedAt = data.finishedAt || null;
-          const hasNewCollection = collectionFinishedAt
-            && collectionFinishedAt !== lastCompletedCollectionRef.current;
-          if (hasNewCollection) lastCompletedCollectionRef.current = collectionFinishedAt;
-          if (options.refreshOnDone && hasNewCollection) {
-            loadData();
-          }
-          if (options.refreshCoverage && hasNewCollection) {
-            loadCollectionCoverage();
+          // 首次读到只建基线不刷新:挂载时页面数据本就最新;基线之后 finishedAt 变化才代表采集完成
+          const collectionChanged = collectionFinishedAt !== lastCompletedCollectionRef.current;
+          const hasBaseline = lastCompletedCollectionRef.current !== undefined;
+          lastCompletedCollectionRef.current = collectionFinishedAt;
+          if (collectionChanged && hasBaseline) {
+            if (options.refreshOnDone) {
+              loadData();
+            }
+            if (options.refreshCoverage) {
+              loadCollectionCoverage();
+            }
           }
         } else if (data.status === 'error') {
           setCollecting(false);
@@ -438,7 +442,8 @@ export function App({ routeMode = 'dashboard' }) {
   }, [loadData]);
 
   // ───── Loading / error screens ─────
-  if (loadError) {
+  // 有可显示的缓存数据时刷新失败只提示不整页报错,保留旧数据供浏览
+  if (loadError && !M) {
     return (
       <div style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
@@ -473,6 +478,16 @@ export function App({ routeMode = 'dashboard' }) {
 
   return (
     <>
+      {loadError && (
+        <div role="alert" style={{
+          position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 40,
+          padding: '8px 16px', borderRadius: 8, fontSize: 13,
+          background: 'var(--paper-2, #fff)', border: '1px solid oklch(0.65 0.16 25)',
+          color: 'oklch(0.45 0.15 25)', boxShadow: '0 4px 16px rgba(0,0,0,.12)'
+        }}>
+          刷新失败：{loadError}，当前显示缓存数据，可点右上角「刷新」重试
+        </div>
+      )}
       <Dashboard
         M={M}
         refreshing={refreshing}

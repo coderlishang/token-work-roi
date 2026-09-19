@@ -53,7 +53,8 @@ export function LiveApp() {
         loading = false;
       }
     }
-    load(Boolean(cachedLiveSnapshot(PULSE_WINDOW_MINUTES)));
+    // 挂载即强刷:乐观导航下旧缓存先行渲染,借 in-flight 去重复用导航预热的请求,新快照到达后自动上屏
+    load(true);
     const timer = setInterval(() => load(true), REFRESH_MS);
     return () => {
       alive = false;
