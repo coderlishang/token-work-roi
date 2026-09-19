@@ -443,7 +443,9 @@ function loadDailyRows(db) {
   `).all().map(row => attachOfficialPricing(
     row,
     row.model,
-    providerFromSource(row.source)
+    providerFromSource(row.source),
+    null,
+    row.usageDate
   ));
 }
 

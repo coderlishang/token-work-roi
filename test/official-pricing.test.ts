@@ -671,3 +671,186 @@ test('uses official pricing cache when provided', async () => {
     output: 1_000_000
   }, { provider: 'Zhipu GLM', pricingData }).totalUSD, 3);
 });
+
+test('prices GLM-5.3-FlashX from the official RMB rate', () => {
+  const cost = calculateOfficialCost('GLM-5.3-FlashX', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'glm-5.3-flashx');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'Zhipu GLM');
+  assert.equal(cost.resolvedModel, 'glm-5.3-flashx');
+  assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
+  const { input, cachedInput, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.equal(input, 2);
+  assert.equal(cachedInput, 0.57);
+  assert.equal(output, 7);
+  assert.ok(Math.abs(cost.totalUSD - (input + cachedInput + output) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+  assert.equal(calculateOfficialCost('glm-5-3-flashx', { input: 1_000_000 }).resolvedModel, 'glm-5.3-flashx');
+});
+
+test('keeps recorded promo-period GLM-5.3-Flash costs reproducible by usage date', () => {
+  const promoRates = {
+    input: 0.05946333743333045,
+    cachedInput: 0.017095709512082505,
+    cacheWrite: 0.05946333743333045,
+    output: 0.20812168101665654
+  };
+  const tokens = {
+    input: 10523,
+    cacheRead: 128704,
+    output: 372
+  };
+  const historical = calculateOfficialCost('GLM-5.3-Flash', tokens, { usageDate: '2026-09-17' });
+  const current = calculateOfficialCost('GLM-5.3-Flash', tokens, { usageDate: '2026-09-18' });
+  const undated = calculateOfficialCost('GLM-5.3-Flash', tokens);
+
+  assert.equal(historical.ratesPerMTok.cacheWrite, promoRates.cacheWrite);
+  assert.equal(historical.totalUSD,
+    promoRates.input * tokens.input / 1_000_000
+    + promoRates.cachedInput * tokens.cacheRead / 1_000_000
+    + promoRates.output * tokens.output / 1_000_000);
+  assert.ok(current.totalUSD > historical.totalUSD);
+  // 无日期走主价（随刷新汇率浮动），与冻结的当期档只差汇率漂移
+  assert.ok(Math.abs(undated.totalUSD - current.totalUSD) / current.totalUSD < 1e-3);
+  // 无效日期回退主价
+  assert.equal(calculateOfficialCost('GLM-5.3-Flash', tokens, { usageDate: 'unknown' }).totalUSD, undated.totalUSD);
+});
+
+test('pricing cache without a schedule inherits the built-in rate schedule', () => {
+  const flashRow = pricingCache.models.find(model => model.model === 'glm-5.3-flash');
+  assert.ok(flashRow?.rateSchedule?.length === 2);
+  const withoutSchedule = { ...flashRow };
+  delete withoutSchedule.rateSchedule;
+  const tokens = { input: 1_000_000, cacheRead: 1_000_000, output: 1_000_000 };
+  const historical = calculateOfficialCost('glm-5.3-flash', tokens, {
+    pricingData: { models: [withoutSchedule] },
+    usageDate: '2026-09-10'
+  });
+
+  assert.ok(Math.abs(historical.ratesPerMTok.input - 0.05946333743333045) < 1e-15);
+  assert.ok(Math.abs(historical.ratesPerMTok.output - 0.20812168101665654) < 1e-15);
+});
+
+test('prices newly released vendor models at their official rates', () => {
+  const cases = [
+    ['gpt-5.4', 'openai'],
+    ['gpt-5.4-nano', 'openai'],
+    ['gpt-5.4-pro', 'openai'],
+    ['gpt-5.5-pro', 'openai'],
+    ['gpt-5.6-cyber', 'openai'],
+    ['gpt-image-2.5-sunburst', 'openai'],
+    ['gpt-image-2.5-flare', 'openai'],
+    ['grok-4.3', 'xai'],
+    ['grok-4.20-0309-reasoning', 'xai'],
+    ['grok-4.20-0309-non-reasoning', 'xai'],
+    ['grok-4.20-0309-multi-agent-0309', 'xai'],
+    ['grok-build-0.1', 'xai'],
+    ['claude-opus-4-5', 'anthropic'],
+    ['claude-sonnet-4-5', 'anthropic'],
+    ['gemini-3.6-flash', 'Gemini'],
+    ['gemini-3.5-flash-lite', 'Gemini'],
+    ['gemini-2.5-flash-lite', 'Gemini'],
+    ['gemini-3.1-flash-image', 'Gemini'],
+    ['gemini-3.1-flash-lite-image', 'Gemini'],
+    ['gemini-3-pro-image', 'Gemini']
+  ];
+  for (const [model, provider] of cases) {
+    const cost = calculateOfficialCost(model, { input: 1_000_000, output: 1_000_000 });
+    assert.equal(cost.priced, true, model);
+    assert.equal(cost.provider, provider, model);
+    assert.equal(cost.resolvedModel, model, model);
+    assert.ok(cost.totalUSD > 0, model);
+  }
+  const opus45 = calculateOfficialCost('claude-opus-4.5', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  assert.equal(opus45.ratesPerMTok.cachedInput, 0.5);
+  assert.equal(opus45.ratesPerMTok.cacheWrite, 6.25);
+});
+
+test('converts new GLM vision model CNY rates to USD at the refresh exchange rate', () => {
+  // 官方 CNY 原价 [0,32K) 档：glm-4.6v 1/3、glm-4.6v-flashx 0.15/1.5、glm-4.5v 2/6，USD 随刷新汇率换算
+  const cnyCases: Array<[string, number, number]> = [
+    ['glm-4.6v', 1, 3],
+    ['glm-4.6v-flashx', 0.15, 1.5],
+    ['glm-4.5v', 2, 6]
+  ];
+  for (const [model, inputCny, outputCny] of cnyCases) {
+    const cost = calculateOfficialCost(model, { input: 1_000_000, output: 1_000_000 });
+    assert.equal(cost.priced, true, model);
+    assert.equal(cost.provider, 'Zhipu GLM', model);
+    const row = OFFICIAL_PRICE_TABLE.find(rate => rate.model === model);
+    assert.ok(row?.officialRatesPerMTok, model);
+    const rate = row.officialRatesPerMTok.exchangeRate;
+    assert.equal(row.officialRatesPerMTok.ratesPerMTok.input, inputCny, model);
+    assert.equal(row.officialRatesPerMTok.ratesPerMTok.output, outputCny, model);
+    assert.ok(Math.abs(cost.ratesPerMTok.input - inputCny / rate) < 1e-15, model);
+    assert.ok(Math.abs(cost.ratesPerMTok.output - outputCny / rate) < 1e-15, model);
+  }
+  const free = calculateOfficialCost('glm-4.6v-flash', { input: 1_000_000, output: 1_000_000 });
+  assert.equal(free.priced, true);
+  assert.equal(free.totalUSD, 0);
+});
+
+test('rateSchedule backfill prices previously unpriced models only from their effective date', () => {
+  const tokens = { input: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000, output: 1_000_000 };
+  for (const model of ['gpt-5.4-mini', 'grok-4.6']) {
+    for (const usageDate of [null, '2026-09-10']) {
+      const cost = calculateOfficialCost(model, tokens, { usageDate });
+      assert.equal(cost.priced, false, `${model} ${usageDate}`);
+      assert.equal(cost.totalUSD, 0, `${model} ${usageDate}`);
+    }
+    const priced = calculateOfficialCost(model, tokens, { usageDate: '2026-09-18' });
+    assert.equal(priced.priced, true, model);
+    assert.ok(priced.totalUSD > 0, model);
+  }
+  const mini = calculateOfficialCost('gpt-5-4-mini', tokens, { usageDate: '2026-09-18' });
+  assert.equal(mini.ratesPerMTok.input, 0.2);
+  assert.equal(mini.ratesPerMTok.cachedInput, 0.02);
+  assert.equal(mini.ratesPerMTok.output, 1.25);
+  const grok = calculateOfficialCost('grok-4-6', tokens, { usageDate: '2026-09-18' });
+  assert.equal(grok.ratesPerMTok.cachedInput, 0.5);
+  for (const model of ['gemini-3.8-flash', 'gemini-3.7-flash']) {
+    const cost = calculateOfficialCost(model, tokens, { usageDate: '2026-09-18' });
+    assert.equal(cost.priced, true, model);
+    assert.equal(cost.ratesPerMTok.input, 0.75, model);
+    const standard = calculateOfficialCost(model, tokens, { usageDate: '2027-01-01' });
+    assert.equal(standard.ratesPerMTok.input, 1.5, model);
+  }
+});
+
+test('grok-4.5 and mythos cached-input history keeps pre-effective-date rates', () => {
+  const tokens = { input: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000, output: 1_000_000 };
+  const grokHistorical = calculateOfficialCost('grok-4.5', tokens, { usageDate: '2026-09-10' });
+  assert.equal(grokHistorical.ratesPerMTok.cachedInput, 2);
+  const grokCurrent = calculateOfficialCost('grok-4.5', tokens);
+  assert.equal(grokCurrent.ratesPerMTok.cachedInput, 0.3);
+  const mythosUndated = calculateOfficialCost('claude-mythos-5.1', tokens);
+  assert.equal(mythosUndated.ratesPerMTok.cachedInput, 10);
+  assert.equal(mythosUndated.ratesPerMTok.cacheWrite, 10);
+  const mythosDated = calculateOfficialCost('claude-mythos-5.1', tokens, { usageDate: '2026-09-18' });
+  assert.equal(mythosDated.ratesPerMTok.cachedInput, 0.25);
+  assert.equal(mythosDated.ratesPerMTok.cacheWrite, 12.5);
+  const mythos5 = calculateOfficialCost('claude-mythos-5', tokens, { usageDate: '2026-09-18' });
+  assert.equal(mythos5.ratesPerMTok.cachedInput, 1);
+});
+
+test('gemini-3.6-flash switches from launch promo to standard rates on 2027-01-01', () => {
+  const tokens = { input: 1_000_000, cacheRead: 1_000_000, output: 1_000_000 };
+  const promo = calculateOfficialCost('gemini-3.6-flash', tokens, { usageDate: '2026-12-31' });
+  assert.equal(promo.ratesPerMTok.input, 0.75);
+  assert.equal(promo.ratesPerMTok.output, 3.75);
+  const standard = calculateOfficialCost('gemini-3.6-flash', tokens, { usageDate: '2027-01-01' });
+  assert.equal(standard.ratesPerMTok.input, 1.5);
+  assert.equal(standard.ratesPerMTok.output, 7.5);
+  assert.ok(standard.totalUSD > promo.totalUSD);
+  assert.equal(calculateOfficialCost('gemini-3.6-flash', tokens).totalUSD, promo.totalUSD);
+});

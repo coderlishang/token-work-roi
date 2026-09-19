@@ -37,19 +37,45 @@ const STABLE_ALIASES = new Map([
   ['openai::gpt-5-6-sol', ['gpt-5.6-sol', 'gpt-5-6-sol']],
   ['openai::gpt-5-6-terra', ['gpt-5.6-terra', 'gpt-5-6-terra']],
   ['openai::gpt-5-6-luna', ['gpt-5.6-luna', 'gpt-5-6-luna']],
+  ['openai::gpt-5-6-cyber', ['gpt-5.6-cyber', 'gpt-5-6-cyber']],
+  ['openai::gpt-5-5-pro', ['gpt-5.5-pro', 'gpt-5-5-pro']],
+  ['openai::gpt-5-4', ['gpt-5.4', 'gpt-5-4']],
+  ['openai::gpt-5-4-pro', ['gpt-5.4-pro', 'gpt-5-4-pro']],
+  ['openai::gpt-5-4-nano', ['gpt-5.4-nano', 'gpt-5-4-nano']],
+  ['openai::gpt-image-2-5-sunburst', ['gpt-image-2.5-sunburst', 'gpt-image-2-5-sunburst']],
+  ['openai::gpt-image-2-5-flare', ['gpt-image-2.5-flare', 'gpt-image-2-5-flare']],
   ['deepseek::deepseek-v4-flash', ['deepseek-v4-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-flash-vision-exp', 'deepseek-chat', 'deepseek-reasoner']],
   ['deepseek::deepseek-flash', ['deepseek-flash', 'deepseek-v4.1-flash', 'deepseek-v4-1-flash']],
   ['minimax::minimax-m3', ['minimax-m3', 'minimax-m-3']],
   ['xai::grok-4-6', ['grok-4.6', 'grok-4-6']],
+  ['xai::grok-4-5', ['grok-4.5', 'grok-4-5']],
+  ['xai::grok-4-3', ['grok-4.3', 'grok-4-3']],
+  ['xai::grok-4-20-0309-reasoning', ['grok-4.20-0309-reasoning', 'grok-4-20-0309-reasoning', 'grok-4.20']],
+  ['xai::grok-4-20-0309-non-reasoning', ['grok-4.20-0309-non-reasoning', 'grok-4-20-0309-non-reasoning']],
+  ['xai::grok-4-20-0309-multi-agent-0309', ['grok-4.20-0309-multi-agent-0309', 'grok-4-20-0309-multi-agent-0309']],
+  ['xai::grok-build-0-1', ['grok-build-0.1', 'grok-build-0-1']],
+  ['anthropic::claude-opus-4-5', ['claude-opus-4-5', 'claude-opus-4.5']],
+  ['anthropic::claude-sonnet-4-5', ['claude-sonnet-4-5', 'claude-sonnet-4.5']],
   ['gemini::gemini-3-8-flash', ['gemini-3.8-flash', 'gemini-3-8-flash']],
   ['gemini::gemini-3-7-flash', ['gemini-3.7-flash', 'gemini-3-7-flash']],
+  ['gemini::gemini-3-6-flash', ['gemini-3.6-flash', 'gemini-3-6-flash']],
+  ['gemini::gemini-3-5-flash-lite', ['gemini-3.5-flash-lite', 'gemini-3-5-flash-lite']],
+  ['gemini::gemini-2-5-flash-lite', ['gemini-2.5-flash-lite', 'gemini-2-5-flash-lite']],
+  ['gemini::gemini-3-1-flash-image', ['gemini-3.1-flash-image', 'gemini-3-1-flash-image', 'gemini-3.1-flash-image-preview']],
+  ['gemini::gemini-3-1-flash-lite-image', ['gemini-3.1-flash-lite-image', 'gemini-3-1-flash-lite-image', 'gemini-3.1-flash-lite-image-preview']],
+  ['gemini::gemini-3-pro-image', ['gemini-3-pro-image', 'gemini-3-pro-image-preview']],
   ['xiaomi::mimo-v2.5-pro', ['mimo-v2.5-pro', 'mimo-v2-pro']],
   ['zhipu glm::glm-5-3', ['glm-5.3', 'glm-5-3']],
   ['zhipu glm::glm-5-3-flash', ['glm-5.3-flash', 'glm-5-3-flash']],
+  ['zhipu glm::glm-5-3-flashx', ['glm-5.3-flashx', 'glm-5-3-flashx']],
   ['zhipu glm::glm-5.2', ['glm-5.2', 'glm-5-2']],
   ['zhipu glm::glm-5.1', ['glm-5.1', 'glm-5-1']],
   ['zhipu glm::glm-4.5-air', ['glm-4.5-air', 'glm-4-5-air']],
   ['zhipu glm::glm-4.7', ['glm-4.7', 'glm-4-7']],
+  ['zhipu glm::glm-4.6v', ['glm-4.6v', 'glm-4-6v']],
+  ['zhipu glm::glm-4.6v-flashx', ['glm-4.6v-flashx', 'glm-4-6v-flashx']],
+  ['zhipu glm::glm-4.6v-flash', ['glm-4.6v-flash', 'glm-4-6v-flash']],
+  ['zhipu glm::glm-4.5v', ['glm-4.5v', 'glm-4-5v']],
   ['qwen::qwen3.7-plus', ['qwen3.7-plus', 'qwen3-7-plus']],
   ['qwen::qwen3-8', ['qwen3.8', 'qwen3-8', 'qwen3.8-max', 'qwen3-8-max']],
   ['qwen::qwen3.7-max', ['qwen3.7-max', 'qwen3-7-max']],
@@ -221,6 +247,10 @@ function officialRateSource(model) {
   }
   if (model.officialRatesPerMTok) {
     lines.push(`    officialRatesPerMTok: ${JSON.stringify(model.officialRatesPerMTok)},`);
+  }
+  // 价目时间表须随内置表回写，否则刷新后按日期取价的历史档丢失
+  if (model.rateSchedule?.length) {
+    lines.push(`    rateSchedule: ${JSON.stringify(model.rateSchedule)},`);
   }
   const tail = [
     `    source: ${literal(model.sourceProvider || model.provider)}`,
@@ -597,16 +627,29 @@ function parseAnthropicMythosModels(body) {
   }, 'anthropic-mythos', 'official-page', null, 'Claude Mythos 5.1 is limited to vetted trusted-access partners; separate prompt-cache rates are not published.')];
 }
 
+// xAI 模型卡：逐模型做名称与美元价双向校验，对不上的模型跳过，由 fallback 沿用内置价
+const XAI_MODEL_SPECS = [
+  { model: 'grok-4.5', label: /grok[\s-]*4\.5/, input: 2, cachedInput: 0.3, output: 6, note: 'xAI Grok 4.5 public model page lists input and output rates; cached-input rate verified against the official models page.' },
+  { model: 'grok-4.6', label: /grok[\s-]*4\.6/, input: 2, cachedInput: 0.5, output: 6, note: 'xAI Grok 4.6 public model page rate; cached input is input × 0.25.' },
+  { model: 'grok-4.3', label: /grok[\s-]*4\.3/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.3 public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-non-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}non-reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 non-reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-multi-agent-0309', label: /grok[\s-]*4\.20[\s\S]{0,60}multi-agent/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 multi-agent (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-build-0.1', label: /grok[\s-]*build/, input: 1, cachedInput: 0.2, output: 2, note: 'xAI Grok Build public model page rate; cached input is input × 0.1.' }
+];
+
 function parseXaiModels(body) {
   const text = tableText(body).toLowerCase();
-  if (!/grok[\s-]*4\.5/.test(text) || !mentionsUsdPrice(text, 2) || !mentionsUsdPrice(text, 6)) return [];
-  return [rateModel('xai', 'grok-4.5', {
-    input: 2,
-    cachedInput: 2,
-    cacheWrite5m: 2,
-    cacheWrite1h: 2,
-    output: 6
-  }, 'xai', 'official-page', null, 'xAI Grok 4.5 public model page lists input and output rates; no separate cached-input rate is applied by default.')];
+  if (!XAI_MODEL_SPECS.some(({ label }) => label.test(text))) return [];
+  return XAI_MODEL_SPECS
+    .filter(spec => spec.label.test(text) && mentionsUsdPrice(text, spec.input) && mentionsUsdPrice(text, spec.output))
+    .map(spec => rateModel('xai', spec.model, {
+      input: spec.input,
+      cachedInput: spec.cachedInput,
+      cacheWrite5m: spec.input,
+      cacheWrite1h: spec.input,
+      output: spec.output
+    }, 'xai', 'official-page', null, spec.note));
 }
 
 function parseDeepSeekModels(body) {
@@ -651,9 +694,14 @@ function parseZaiModels(body, exchangeRate) {
   const pairs = [
     ['glm-5.3', 'GLM-5.3'],
     ['glm-5.3-flash', 'GLM-5.3-Flash'],
+    ['glm-5.3-flashx', 'GLM-5.3-FlashX'],
     ['glm-5.2', 'GLM-5.2'],
     ['glm-5.1', 'GLM-5.1'],
     ['glm-5v-turbo', 'GLM-5V-Turbo'],
+    ['glm-4.6v', 'GLM-4.6V'],
+    ['glm-4.6v-flashx', 'GLM-4.6V-FlashX'],
+    ['glm-4.6v-flash', 'GLM-4.6V-Flash'],
+    ['glm-4.5v', 'GLM-4.5V'],
     ['glm-5-turbo', 'GLM-5-Turbo'],
     ['glm-5', 'GLM-5'],
     ['glm-4.7', 'GLM-4.7'],
@@ -663,10 +711,12 @@ function parseZaiModels(body, exchangeRate) {
   ];
   return pairs.map(([model, label]) => {
     const block = modelBlock(body, label);
-    if (!block) return null;
-    const input = cnyPrice(block, /inPrice:\["([^"]+)"/);
-    const output = cnyPrice(block, /outPrice:\["([^"]+)"/);
-    const cachedInput = cnyPrice(block, /hit:\["([^"]+)"/);
+    // 页面暂缺的模型沿用内置现价，避免刷新因条目数校验失败而中断
+    if (!block) return carriedRateModel(model, exchangeRate);
+    const baselineCny = OFFICIAL_PRICE_TABLE.find(row => row.provider === 'Zhipu GLM' && row.model === model)?.officialRatesPerMTok?.ratesPerMTok;
+    const input = lastPriceValue(block, 'inPrice', baselineCny?.input);
+    const output = lastPriceValue(block, 'outPrice', baselineCny?.output);
+    const cachedInput = lastPriceValue(block, 'hit', baselineCny?.cachedInput);
     if (input == null || output == null) return null;
     return rateModel('Zhipu GLM', model, cnyToUsdRates({
       input,
@@ -688,6 +738,40 @@ function parseZaiModels(body, exchangeRate) {
       sourceUnit: '元 / 1M tokens'
     });
   }).filter(Boolean);
+}
+
+// 价格数组不带档位标注，可能按 [促销, 标准] 或 [短上下文, 长上下文] 排列，固定取末位会错档：
+// 优先取与内置表当前 CNY 价相等的档位（沿用现价），对不上再取末位（真调价时进 diff 人工核对）
+function lastPriceValue(block, field, baselineCny) {
+  const array = block.match(new RegExp(`${field}:\\[([^\\]]*)\\]`))?.[1];
+  if (!array) return null;
+  const values = (array.match(/"([^"]*)"/g) || [])
+    .map(value => cnyPriceFromValue(value.replace(/"/g, '')))
+    .filter(value => value != null);
+  if (!values.length) return null;
+  if (baselineCny != null && values.includes(baselineCny)) return baselineCny;
+  return values[values.length - 1];
+}
+
+function cnyPriceFromValue(value) {
+  if (!value || value.includes('免费')) return 0;
+  const number = Number(value.match(/[0-9.]+/)?.[0]);
+  return Number.isFinite(number) ? number : null;
+}
+
+function carriedRateModel(model, exchangeRate) {
+  const baseline = OFFICIAL_PRICE_TABLE.find(row => row.provider === 'Zhipu GLM' && row.model === model);
+  if (!baseline?.ratesPerMTok) return null;
+  // 页面下架的模型沿用内置 CNY 原价并按当前汇率重算 USD，保留官方价溯源
+  const officialRates = baseline.officialRatesPerMTok;
+  const cnyRates = officialRates?.currency === 'CNY' ? officialRates.ratesPerMTok : null;
+  const ratesPerMTok = cnyRates && cnyRates.input != null && cnyRates.output != null
+    ? cnyToUsdRates({ ...cnyRates, input: cnyRates.input, output: cnyRates.output } as ParsedRates, exchangeRate)
+    : baseline.ratesPerMTok;
+  if (!ratesPerMTok) return null;
+  return rateModel('Zhipu GLM', model, ratesPerMTok, 'Zhipu GLM', 'baseline-carried', officialRates
+    ? { ...officialRates, exchangeRate: exchangeRate.rate }
+    : null);
 }
 
 function parseVolcengineModels(body, exchangeRate) {
@@ -767,7 +851,10 @@ function parseGeminiModels(body) {
   const models = [
     ['gemini-3.8-flash', 'gemini-3.8-flash', 0],
     ['gemini-3.7-flash', 'gemini-3.7-flash', 0],
+    ['gemini-3.6-flash', 'gemini-3.6-flash', 0],
     ['gemini-3.5-flash', 'gemini-3.5-flash', 0],
+    ['gemini-3.5-flash-lite', 'gemini-3.5-flash-lite', 0],
+    ['gemini-2.5-flash-lite', 'gemini-2.5-flash-lite', 0],
     ['gemini-3.1-flash-lite', 'gemini-3.1-flash-lite', 0],
     ['gemini-3.1-pro-preview', 'gemini-3.1-pro-preview', 0],
     ['gemini-2.5-flash', 'gemini-2.5-flash', 0],
@@ -1016,10 +1103,7 @@ function modelBlock(body, label) {
 }
 
 function cnyPrice(block, pattern) {
-  const value = block.match(pattern)?.[1];
-  if (!value || value.includes('免费')) return 0;
-  const number = Number(value.match(/[0-9.]+/)?.[0]);
-  return Number.isFinite(number) ? number : null;
+  return cnyPriceFromValue(block.match(pattern)?.[1]);
 }
 
 function cnyToUsdRates(rates: ParsedRates, exchangeRate): ParsedRates | null {

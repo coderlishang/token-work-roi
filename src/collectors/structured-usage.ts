@@ -341,7 +341,7 @@ export function buildStructuredUsageOutput(clientKey, events, pricingData) {
         client: clientKey,
         modelId: row.model,
         tokens: toTokenPayload(row.tokens),
-        cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData)
+        cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData, null, row.date)
       }))
     }));
 
