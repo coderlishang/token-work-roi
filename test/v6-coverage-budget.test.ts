@@ -106,7 +106,7 @@ test('budget windows can target heavy model groups and hard thresholds', () => {
 
 test('Codex budgets include generic, CLI and Desktop sources without matching other tools', () => {
   const nowMs = Date.parse('2026-09-05T12:00:00Z');
-  const rows = ['Codex', 'Codex CLI', 'Codex Desktop', 'Codex (unidentified client)', 'CodexOther', 'Claude Code']
+  const rows = ['Codex', 'Codex CLI', 'Codex Desktop', 'codex', 'CodexOther', 'Claude Code']
     .map(source => ({ source, timestampMs: nowMs, totalTokens: 100 }));
   const [budget] = buildBudgetWindows({
     rows, nowMs,

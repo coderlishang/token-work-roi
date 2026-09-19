@@ -980,7 +980,7 @@ test('collect removes an unlinked zero-token Codex session with no model', async
       db.prepare(`
         INSERT INTO session_usage (device, source, session_id, model, total_tokens)
         VALUES (?, ?, ?, 'unknown', 0)
-      `).run(hostname(), 'Codex (unidentified client)', 'local:codex:desktop-empty:unknown');
+      `).run(hostname(), 'Codex', 'local:codex:desktop-empty:unknown');
     } finally {
       db.close();
     }
@@ -1013,14 +1013,14 @@ test('collect preserves local Codex daily records without matching events or ses
     const db = new DatabaseSync(fixture.dbPath);
     try {
       db.prepare(`INSERT INTO daily_usage (device, source, usage_date, model, total_tokens) VALUES (?, ?, '2026-01-01', 'gpt-5.5', 777)`).run(
-        hostname(), 'Codex (unidentified client)'
+        hostname(), 'Codex'
       );
     } finally { db.close(); }
     const second = await runNode(['src/collect.ts', '--sources=codex', '--db', fixture.dbPath, '--apply', '--yes', '--json'], fixture.env);
     assert.equal(second.code, 0, second.stderr);
     const repaired = new DatabaseSync(fixture.dbPath, { readOnly: true });
     try {
-      assert.equal(repaired.prepare(`SELECT COUNT(*) AS count FROM daily_usage WHERE source = 'Codex (unidentified client)'`).get().count, 1);
+      assert.equal(repaired.prepare(`SELECT COUNT(*) AS count FROM daily_usage WHERE source = 'Codex'`).get().count, 1);
     } finally { repaired.close(); }
   } finally { cleanupFixture(fixture); }
 });
@@ -1138,7 +1138,7 @@ test('collect reconciles current Codex events while preserving historical usage'
       `).get().count, 1);
       assert.equal(repaired.prepare(`
         SELECT total_tokens AS totalTokens FROM session_usage
-        WHERE source = 'Codex (unidentified client)' AND session_id = 'local:codex:unscanned-session:gpt-5.4-mini'
+        WHERE source = 'Codex' AND session_id = 'local:codex:unscanned-session:gpt-5.4-mini'
       `).get().totalTokens, 777);
       assert.equal(repaired.prepare(`
         SELECT COUNT(*) AS count FROM daily_usage
@@ -1362,7 +1362,7 @@ test('scheduled Codex collection preserves history after local session logs are 
     const db = new DatabaseSync(fixture.dbPath);
     try {
       for (const table of ['token_events', 'session_usage', 'daily_usage']) {
-        db.prepare(`UPDATE ${table} SET source = ? WHERE source = ?`).run('Codex (unidentified client)', 'Codex CLI');
+        db.prepare(`UPDATE ${table} SET source = ? WHERE source = ?`).run('Codex', 'Codex CLI');
       }
     } finally {
       db.close();
@@ -1383,10 +1383,10 @@ test('scheduled Codex collection preserves history after local session logs are 
 
     const repaired = new DatabaseSync(fixture.dbPath, { readOnly: true });
     try {
-      assert.ok(Number(repaired.prepare(`SELECT COUNT(*) AS count FROM token_events WHERE source = 'Codex (unidentified client)'`).get().count) > 0);
+      assert.ok(Number(repaired.prepare(`SELECT COUNT(*) AS count FROM token_events WHERE source = 'Codex'`).get().count) > 0);
       assert.equal(repaired.prepare(`
         SELECT total_tokens AS totalTokens FROM daily_usage
-        WHERE source = 'Codex (unidentified client)' AND model = 'gpt-5.4-mini'
+        WHERE source = 'Codex' AND model = 'gpt-5.4-mini'
       `).get().totalTokens, 50);
     } finally {
       repaired.close();
