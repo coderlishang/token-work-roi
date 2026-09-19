@@ -12,7 +12,8 @@ import { collectableCollectors, collectorLabel, enabledCollectorIds } from './co
 type InputRecord = Record<string, unknown>;
 
 const LEGACY_CODEX_SOURCE = 'Codex CLI';
-const UNKNOWN_CODEX_SOURCE = 'Codex (unidentified client)';
+// 未细分 Codex 兜底来源,与 ccusage legacy 同名;历史 'Codex (unidentified client)' 由升级扫描兼容
+const UNKNOWN_CODEX_SOURCE = 'Codex';
 const SCHEDULED_BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const CODEX_NATIVE_REASONING_VERSION = 1;
 const CODEX_CCUSAGE_REASONING_VERSION = 2;

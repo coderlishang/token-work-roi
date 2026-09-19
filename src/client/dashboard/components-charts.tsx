@@ -10,28 +10,33 @@ import { Delta } from './components-top.tsx';
 // ───────────────────────────────────────────────────────────────
 // ECharts wrapper
 // ───────────────────────────────────────────────────────────────
-function EChart({ option, height = 320, onEvents = null }) {
+function EChart({ option, height = 320, onEvents = null }: {
+  option: Record<string, unknown>;
+  height?: number | string;
+  onEvents?: Record<string, (params: unknown) => void> | null;
+}) {
   const ref = useRef(null);
   const chartRef = useRef(null);
 
   useEffect(() => {
     if (!ref.current) return;
     chartRef.current = echarts.init(ref.current, null, { renderer: 'canvas' });
-    const onResize = () => chartRef.current?.resize();
-    window.addEventListener('resize', onResize);
+    // 容器尺寸变化(窗口缩放、面板随同行高度拉伸)统一由 ResizeObserver 重排画布
+    const ro = new ResizeObserver(() => chartRef.current?.resize());
+    ro.observe(ref.current);
     if (onEvents) {
       for (const [name, handler] of Object.entries(onEvents)) {
         chartRef.current.on(name, handler);
       }
     }
     return () => {
-      window.removeEventListener('resize', onResize);
+      ro.disconnect();
       chartRef.current?.dispose();
     };
   }, []);
 
   useEffect(() => {
-    if (chartRef.current) chartRef.current.setOption(option, true);
+    if (chartRef.current) chartRef.current.setOption(option as echarts.EChartsOption, true);
   }, [option]);
 
   return <div ref={ref} style={{ width: '100%', height }} />;
@@ -252,7 +257,9 @@ function TrendChart({ rows, dates, sources, compareRows, compareDates, mode, onM
           </button>
         </div>
       </div>
-      <EChart option={option} height={320}/>
+      <div className="trend-chart-fill">
+        <EChart option={option} height="100%"/>
+      </div>
     </div>
   );
 }
@@ -347,6 +354,12 @@ function SourceDonut({ rows, sources, onFocusSource, focused }) {
 // ───────────────────────────────────────────────────────────────
 function TopModels({ rows, onDrillModel }) {
   const [expanded, setExpanded] = useState(false);
+  const [chipExpanded, setChipExpanded] = useState(() => new Set());
+  const toggleChips = (model, open) => setChipExpanded(prev => {
+    const next = new Set(prev);
+    if (open) next.add(model); else next.delete(model);
+    return next;
+  });
   const byModel = new Map();
   for (const r of rows) {
     if (!r.model) continue;
@@ -388,21 +401,37 @@ function TopModels({ rows, onDrillModel }) {
           )}
         </div>
       </div>
-      <div className={`bars top-model-bars ${expanded ? 'expanded' : ''}`}>
+      <div className={`bars top-model-bars ${expanded || chipExpanded.size ? 'expanded' : ''}`}>
         {list.length === 0 && <div className="empty">当前筛选下无数据</div>}
         {visibleList.map(m => (
           <div key={m.model} className="bar-row" onClick={() => onDrillModel?.(m)}>
             <div className="bar-label">
               <div className="model">{m.model}</div>
               <div className="meta">
-                <span className="source-chip-list">
-                  {m.sourceList.slice(0, 2).map(([source]) => (
-                    <span className="tag compact-tag" key={source}>
+                <span className={`source-chip-list ${chipExpanded.has(m.model) ? 'wrap' : ''}`}>
+                  {(chipExpanded.has(m.model) ? m.sourceList : m.sourceList.slice(0, 2)).map(([source]) => (
+                    <span className="tag compact-tag" key={source} title={source}>
                       <span className="tag-dot" style={{background: U.getSourceColor(source)}}/>
-                      {source}
+                      <span className="tag-text">{source}</span>
                     </span>
                   ))}
-                  {m.sourceList.length > 2 && <span className="muted-chip">+{m.sourceList.length - 2}</span>}
+                  {m.sourceList.length > 2 && !chipExpanded.has(m.model) && (
+                    <button
+                      type="button"
+                      className="muted-chip more-chip"
+                      title={m.sourceList.slice(2).map(([source]) => source).join('、')}
+                      onClick={e => { e.stopPropagation(); toggleChips(m.model, true); }}>
+                      +{m.sourceList.length - 2}
+                    </button>
+                  )}
+                  {m.sourceList.length > 2 && chipExpanded.has(m.model) && (
+                    <button
+                      type="button"
+                      className="muted-chip more-chip"
+                      onClick={e => { e.stopPropagation(); toggleChips(m.model, false); }}>
+                      收起
+                    </button>
+                  )}
                 </span>
                 <span>{m.count} 条记录</span>
               </div>

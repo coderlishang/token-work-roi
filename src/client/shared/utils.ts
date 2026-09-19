@@ -7,9 +7,9 @@ const PALETTE = {
   'Claude Code':        'oklch(0.55 0.16 265)',
   'Claude Code (JS)':   'oklch(0.55 0.16 265)',
   // Codex / OpenAI → violet
+  'Codex':              'oklch(0.60 0.15 295)',
   'Codex Desktop':      'oklch(0.60 0.15 295)',
   'Codex CLI':          'oklch(0.60 0.15 295)',
-  'Codex (unidentified client)': 'oklch(0.60 0.08 295)',
   'Codex CLI (JS)':     'oklch(0.60 0.15 295)',
   // Hermes → blue
   'Hermes Agent':       'oklch(0.58 0.14 240)',

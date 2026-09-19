@@ -52,7 +52,8 @@ export const SOURCE_LABEL = 'Codex';
 
 const CODEX_DESKTOP_SOURCE = 'Codex Desktop';
 const CODEX_CLI_SOURCE = 'Codex CLI';
-const CODEX_UNKNOWN_SOURCE = 'Codex (unidentified client)';
+// 未细分客户端的 Codex 用量,与 ccusage legacy 来源同名,不再单列 unidentified
+const CODEX_UNKNOWN_SOURCE = 'Codex';
 
 const SESSION_META_SCAN_BYTES = 64 * 1024;
 const INCREMENTAL_TAIL_BYTES = 4 * 1024 * 1024;

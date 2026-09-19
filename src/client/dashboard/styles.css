@@ -2567,7 +2567,8 @@ button, input, select { font-family: inherit; color: inherit; }
   gap: 16px;
 }
 .donut-row .chart { height: 200px; width: 200px; flex-shrink: 0; }
-.legend { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* 高度帽:8 来源恰好 440px 无变化;来源继续增多时图例内滚动,面板与同行趋势面板不再被撑高 */
+.legend { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; max-height: 445px; overflow-y: auto; scrollbar-width: thin; }
 .legend-item {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr) max-content;
@@ -2585,8 +2586,9 @@ button, input, select { font-family: inherit; color: inherit; }
 .legend-item:hover { background: var(--surface-2); }
 .legend-item.dim { opacity: 0.4; }
 .legend-swatch { width: 8px; height: 8px; border-radius: 2px; grid-row: 1 / span 2; }
-.legend-name { min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
-.legend-val { grid-column: 2; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11.5px; }
+/* 名称/数值均禁换行省略截断：窄列下图例项恒定两行，避免逐字符断行撑高面板 */
+.legend-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.25; }
+.legend-val { grid-column: 2; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11.5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .legend-pct { grid-column: 3; grid-row: 1 / span 2; align-self: center; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; min-width: 36px; text-align: right; }
 
 /* ─── Top-Models bars ────────────────────────────────────── */
@@ -2630,6 +2632,7 @@ button, input, select { font-family: inherit; color: inherit; }
   padding: 10px 8px;
   border-radius: 6px;
   cursor: pointer;
+  flex-shrink: 0; /* 内容超容器 max-height 时行高不被 flex 压缩,避免溢出叠印 */
 }
 .bar-row:hover { background: var(--surface-2); }
 .bar-label {
@@ -2662,10 +2665,20 @@ button, input, select { font-family: inherit; color: inherit; }
   min-width: 0;
   overflow: hidden;
 }
+.source-chip-list.wrap {
+  flex-wrap: wrap;
+  white-space: normal;
+}
 .compact-tag {
   max-width: 118px;
   overflow: hidden;
+  white-space: nowrap; /* 固定 20px 高,长来源名走省略号而非换行被裁 */
+}
+.compact-tag .tag-dot { flex-shrink: 0; } /* 长名收缩时色点不被压没 */
+.compact-tag .tag-text {
+  overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 .muted-chip {
   display: inline-flex;
@@ -2676,6 +2689,15 @@ button, input, select { font-family: inherit; color: inherit; }
   color: var(--muted);
   background: var(--surface-2);
   border: 1px solid var(--border);
+}
+.muted-chip.more-chip {
+  cursor: pointer;
+  font: inherit;
+  flex-shrink: 0;
+}
+.muted-chip.more-chip:hover {
+  color: var(--text);
+  border-color: var(--muted);
 }
 .bar-track {
   margin-top: 4px;
@@ -3820,6 +3842,16 @@ table.dt input[type="checkbox"] {
 }
 
 /* responsive — small fallback */
+/* 趋势面板填满同行高度:来源占比面板更高时趋势图随之长高,行内不再残留空白;7 天下面板高度不变 */
+.dashboard-chart-grid > .col-8 { display: flex; flex-direction: column; }
+.dashboard-chart-grid > .col-8 > .panel { flex: 1; display: flex; flex-direction: column; }
+.dashboard-chart-grid > .col-8 > .panel > .panel-header { flex-shrink: 0; }
+.dashboard-chart-grid .trend-chart-fill { flex: 1; min-height: 320px; }
+/* 多列区间 8/4 列下图例列过窄,来源名/数值被截断:放宽为 7/5,面板结构与高度不变 */
+@media (min-width: 1181px) and (max-width: 1440px) {
+  .dashboard-chart-grid .col-8 { grid-column: span 7; }
+  .dashboard-chart-grid .col-4 { grid-column: span 5; }
+}
 @media (max-width: 1180px) {
   .kpi-row { grid-template-columns: repeat(3, 1fr); }
   .model-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
