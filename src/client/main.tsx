@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { App } from './dashboard/App.tsx';
 import { ReviewApp } from './review/ReviewApp.tsx';
 import { LiveApp } from './live/LiveApp.tsx';
@@ -9,20 +9,14 @@ const APP_ROUTES = new Set(['/', '/review', '/live', '/trust']);
 
 function Root() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
-  const navigation = useRef(0);
 
   useEffect(() => {
-    const navigate = async (url, push) => {
+    const navigate = (url, push) => {
       if (!APP_ROUTES.has(url.pathname)) return;
-      const request = ++navigation.current;
-      try {
-        await prepareRoute(url.pathname);
-      } catch {
-        // The destination keeps its existing error state when the request fails.
-      }
-      if (navigation.current !== request) return;
       if (push) window.history.pushState(null, '', `${url.pathname}${url.search}${url.hash}`);
       setPathname(url.pathname);
+      // 乐观切换:不等数据,后台预热目标页请求;各页面组件挂载后会借 in-flight 去重复用同一请求并自行上屏
+      prepareRoute(url.pathname).catch(() => {});
     };
     const onClick = event => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

@@ -1448,10 +1448,13 @@ export function calculateOfficialCost(model, tokens: TokenInput = {}, options: P
   };
 }
 
-export function resolveOfficialPricing(model, provider: string | null = null, pricingData: PricingData | null = null, usageDate: string | null = null) {
-  const normalized = normalizeModelId(model);
-  if (!normalized || normalized === '<synthetic>') return null;
+// 解析结果记忆化:同一价格表下 (模型, 供应商, 用量日期) 的解析结果恒定,重复调用直接查缓存。
+// 热路径是 /api/data 对数百行 daily/sessions 逐行定价,原先每行都对全价表 slice+sort,是主要耗时。
+const officialPricingCache = new WeakMap<PricingData, Map<string, ReturnType<typeof resolveOfficialPricingFromTable>>>();
+// pricingData 为空时走内置静态表,无对象键可用,用模块级 Map 承接(表内容进程内不变)。
+const builtinPricingCache = new Map<string, ReturnType<typeof resolveOfficialPricingFromTable>>();
 
+function resolveOfficialPricingFromTable(normalized: string, provider: string | null, pricingData: PricingData | null, usageDate: string | null) {
   const candidates = modelCandidates(normalized, provider);
   const sorted = pricingTableFrom(pricingData)
     .slice()
@@ -1462,6 +1465,28 @@ export function resolveOfficialPricing(model, provider: string | null = null, pr
   }
 
   return null;
+}
+
+export function resolveOfficialPricing(model, provider: string | null = null, pricingData: PricingData | null = null, usageDate: string | null = null) {
+  const normalized = normalizeModelId(model);
+  if (!normalized || normalized === '<synthetic>') return null;
+
+  let cache = builtinPricingCache;
+  if (pricingData) {
+    cache = officialPricingCache.get(pricingData) ?? (() => {
+      const created = new Map<string, ReturnType<typeof resolveOfficialPricingFromTable>>();
+      officialPricingCache.set(pricingData, created);
+      return created;
+    })();
+  }
+
+  const cacheKey = `${normalized}\u0000${provider ?? ''}\u0000${usageDate ?? ''}`;
+  let resolved = cache.get(cacheKey);
+  if (resolved === undefined) {
+    resolved = resolveOfficialPricingFromTable(normalized, provider, pricingData, usageDate);
+    cache.set(cacheKey, resolved);
+  }
+  return resolved;
 }
 
 export function officialPricingMetadata(rows: PricingRow[] = [], pricingData: PricingData | null = null) {
