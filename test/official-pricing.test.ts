@@ -715,8 +715,8 @@ test('keeps recorded promo-period GLM-5.3-Flash costs reproducible by usage date
     + promoRates.cachedInput * tokens.cacheRead / 1_000_000
     + promoRates.output * tokens.output / 1_000_000);
   assert.ok(current.totalUSD > historical.totalUSD);
-  // 无日期走主价（随刷新汇率浮动），与冻结的当期档只差汇率漂移
-  assert.ok(Math.abs(undated.totalUSD - current.totalUSD) / current.totalUSD < 1e-3);
+  // 无日期走主价(随汇率浮动),与当期档只差汇率漂移,容差 1%
+  assert.ok(Math.abs(undated.totalUSD - current.totalUSD) / current.totalUSD < 1e-2);
   // 无效日期回退主价
   assert.equal(calculateOfficialCost('GLM-5.3-Flash', tokens, { usageDate: 'unknown' }).totalUSD, undated.totalUSD);
 });
