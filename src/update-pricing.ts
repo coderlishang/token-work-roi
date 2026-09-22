@@ -489,7 +489,7 @@ function parseSourceModels(source, body, exchangeRate) {
   if (source.provider === 'anthropic-mythos') return parseAnthropicMythosModels(body);
   if (source.provider === 'anthropic') return parseAnthropicModels(body);
   if (source.provider === 'deepseek') return parseDeepSeekModels(body);
-  if (source.provider === 'xiaomi') return parseColumnPricingTable(body, {
+  if (source.provider === 'xiaomi') return parseXiaomiModels(body, {
     provider: 'xiaomi',
     sourceProvider: 'xiaomi',
     models: ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro'],
@@ -1067,6 +1067,30 @@ function parseColumnPricingTable(body, { provider, sourceProvider, models, start
       output: prices[2],
       cacheWrite5m: prices[1],
       cacheWrite1h: prices[1]
+    }, sourceProvider, 'official-page');
+  }).filter(Boolean);
+}
+
+// 新版计价页同一行用「、」聚合多个型号并带 (to be deprecated) 标记，按 <tr> 行解析可避免型号前缀误配与正文误命中
+function parseXiaomiModels(body, { provider, sourceProvider, models, startMarker = 'Overseas Pricing of the Model' }) {
+  const segment = startMarker ? body.slice(Math.max(0, body.indexOf(startMarker))) : body;
+  const rows = Array.from(segment.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi), match => match[1])
+    .map(row => {
+      const cellText = row.replace(/<[^>]+>/g, '|').replace(/\s+/g, ' ');
+      const prices = Array.from(cellText.matchAll(/\$\s*([0-9]+(?:\.[0-9]+)?)/g), m => Number(m[1]));
+      const modelNames = Array.from(cellText.matchAll(/(mimo-[a-z0-9](?:[a-z0-9.-]*)?)/gi), m => m[1].toLowerCase());
+      return { modelNames, prices };
+    })
+    .filter(row => row.prices.length === 3 && row.modelNames.length > 0);
+  return models.map(model => {
+    const hit = rows.find(row => row.modelNames.includes(model));
+    if (!hit) return null;
+    return rateModel(provider, model, {
+      cachedInput: hit.prices[0],
+      input: hit.prices[1],
+      output: hit.prices[2],
+      cacheWrite5m: hit.prices[1],
+      cacheWrite1h: hit.prices[1]
     }, sourceProvider, 'official-page');
   }).filter(Boolean);
 }
