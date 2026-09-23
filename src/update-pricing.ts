@@ -55,6 +55,7 @@ const STABLE_ALIASES = new Map([
   ['xai::grok-4-20-0309-multi-agent-0309', ['grok-4.20-0309-multi-agent-0309', 'grok-4-20-0309-multi-agent-0309']],
   ['xai::grok-build-0-1', ['grok-build-0.1', 'grok-build-0-1']],
   ['anthropic::claude-opus-4-5', ['claude-opus-4-5', 'claude-opus-4.5']],
+  ['anthropic::claude-opus-5-5', ['claude-opus-5-5', 'claude-opus-5.5']],
   ['anthropic::claude-sonnet-4-5', ['claude-sonnet-4-5', 'claude-sonnet-4.5']],
   ['gemini::gemini-3-8-flash', ['gemini-3.8-flash', 'gemini-3-8-flash']],
   ['gemini::gemini-3-7-flash', ['gemini-3.7-flash', 'gemini-3-7-flash']],
@@ -597,6 +598,7 @@ function parseAnthropicModels(body) {
 
   const opus = rates.find(rate => rate.label.includes('opus 4.8'));
   const opus5 = rates.find(rate => /opus\s+5(?![.-]\d)/.test(rate.label));
+  const opus55 = rates.find(rate => rate.label.includes('opus 5.5'));
   const fable51 = rates.find(rate => rate.label.includes('fable 5.1'));
   const sonnet5 = rates.find(rate => rate.label.includes('sonnet 5'));
   const sonnet = rates.find(rate => rate.label.includes('sonnet 4.6'));
@@ -604,8 +606,9 @@ function parseAnthropicModels(body) {
   return [
     rateModel('anthropic', 'claude-fable-5.1', fable51, 'anthropic', 'official-page', null, 'First-party Claude Fable 5.1 pricing; cache write defaults to 5-minute prompt caching.'),
     rateModel('anthropic', 'claude-opus-5', opus5, 'anthropic'),
+    rateModel('anthropic', 'claude-opus-5-5', opus55, 'anthropic'),
     ...['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6'].map(model => rateModel('anthropic', model, opus, 'anthropic')),
-    rateModel('anthropic', 'claude-sonnet-5', sonnet5, 'anthropic', 'official-page', null, 'Claude Sonnet 5 introductory pricing through August 31, 2026; standard pricing is USD 3/15 per MTok afterward.'),
+    rateModel('anthropic', 'claude-sonnet-5', sonnet5, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-6', sonnet, 'anthropic'),
     rateModel('anthropic', 'claude-haiku-4-5', haiku, 'anthropic')
   ].filter(Boolean);
@@ -1047,28 +1050,6 @@ function volcenginePriceFor(body, label, chargeKind) {
   );
   const match = body.match(pattern);
   return match ? Number(match[1]) : null;
-}
-
-function parseColumnPricingTable(body, { provider, sourceProvider, models, startMarker = '', endMarker = '' }) {
-  let segment = body;
-  const start = startMarker ? segment.indexOf(startMarker) : -1;
-  if (start >= 0) segment = segment.slice(start);
-  const end = endMarker ? segment.indexOf(endMarker) : -1;
-  if (end > 0) segment = segment.slice(0, end);
-
-  const text = tableText(segment);
-  return models.map(model => {
-    const match = text.match(new RegExp(`${escapeRegExp(model)}\\|+\\s*\\|+\\$([0-9.]+)\\|+\\s*\\|+\\$([0-9.]+)\\|+\\s*\\|+\\$([0-9.]+)`));
-    const prices = match ? [Number(match[1]), Number(match[2]), Number(match[3])] : [];
-    if (prices.length < 3) return null;
-    return rateModel(provider, model, {
-      cachedInput: prices[0],
-      input: prices[1],
-      output: prices[2],
-      cacheWrite5m: prices[1],
-      cacheWrite1h: prices[1]
-    }, sourceProvider, 'official-page');
-  }).filter(Boolean);
 }
 
 // 新版计价页同一行用「、」聚合多个型号并带 (to be deprecated) 标记，按 <tr> 行解析可避免型号前缀误配与正文误命中
