@@ -493,7 +493,7 @@ function parseSourceModels(source, body, exchangeRate) {
   if (source.provider === 'xiaomi') return parseXiaomiModels(body, {
     provider: 'xiaomi',
     sourceProvider: 'xiaomi',
-    models: ['mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro'],
+    models: ['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro-ultraspeed', 'mimo-v2.5-pro', 'mimo-v2.5', 'mimo-v2-pro'],
     startMarker: 'Overseas Pricing of the Model'
   });
   if (isZhipuSource(source)) return parseZaiModels(body, exchangeRate);
@@ -582,34 +582,49 @@ function escapeRegex(value) {
 }
 
 function parseAnthropicModels(body) {
-  const cards = body.split('card_pricing_api_wrap').slice(1);
+  // 计价页改为模型卡结构，价格是纯文本（无 data-value），按卡片内标签取价避免串行
+  const cards = body.split('__modelCard').slice(1);
+  const priceOf = (card, label) => {
+    // 标签与价格之间不允许出现下一个标签，避免该档缺价时误取下一档的价格
+    const match = card.match(new RegExp(`__priceLabel[^>]*>${label}</p>(?:(?!__priceLabel)[\\s\\S]){0,120}?__priceValue[^>]*>\\$([0-9.]+)`));
+    return match ? Number(match[1]) : null;
+  };
   const rates = cards.map(card => {
-    const values = Array.from(card.matchAll(/data-value="([0-9.]+)"/g), match => Number(match[1]));
-    if (values.length < 4) return null;
+    const name = card.match(/__modelName[^>]*>([^<]+)</)?.[1];
+    if (!name) return null;
+    const input = priceOf(card, 'Input');
+    const output = priceOf(card, 'Output');
+    if (input == null || output == null) return null;
     return {
-      label: tableText(card).toLowerCase(),
-      input: values[0],
-      output: values[1],
-      cachedInput: values[2],
-      cacheWrite5m: values[3],
-      cacheWrite1h: values[0] * 2,
+      label: name.toLowerCase(),
+      input,
+      output,
+      cachedInput: priceOf(card, 'Read') ?? input,
+      cacheWrite5m: priceOf(card, 'Write') ?? input,
+      cacheWrite1h: input * 2,
     };
   }).filter(Boolean);
 
   const opus = rates.find(rate => rate.label.includes('opus 4.8'));
   const opus5 = rates.find(rate => /opus\s+5(?![.-]\d)/.test(rate.label));
   const opus55 = rates.find(rate => rate.label.includes('opus 5.5'));
+  const fable5 = rates.find(rate => /fable\s+5(?![.-]\d)/.test(rate.label));
   const fable51 = rates.find(rate => rate.label.includes('fable 5.1'));
   const sonnet5 = rates.find(rate => rate.label.includes('sonnet 5'));
   const sonnet = rates.find(rate => rate.label.includes('sonnet 4.6'));
+  const opus45 = rates.find(rate => rate.label.includes('opus 4.5'));
+  const sonnet45 = rates.find(rate => rate.label.includes('sonnet 4.5'));
   const haiku = rates.find(rate => rate.label.includes('haiku 4.5'));
   return [
+    rateModel('anthropic', 'claude-fable-5', fable5, 'anthropic'),
     rateModel('anthropic', 'claude-fable-5.1', fable51, 'anthropic', 'official-page', null, 'First-party Claude Fable 5.1 pricing; cache write defaults to 5-minute prompt caching.'),
     rateModel('anthropic', 'claude-opus-5', opus5, 'anthropic'),
     rateModel('anthropic', 'claude-opus-5-5', opus55, 'anthropic'),
     ...['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6'].map(model => rateModel('anthropic', model, opus, 'anthropic')),
+    rateModel('anthropic', 'claude-opus-4-5', opus45, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-5', sonnet5, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-6', sonnet, 'anthropic'),
+    rateModel('anthropic', 'claude-sonnet-4-5', sonnet45, 'anthropic'),
     rateModel('anthropic', 'claude-haiku-4-5', haiku, 'anthropic')
   ].filter(Boolean);
 }
@@ -783,10 +798,14 @@ function parseVolcengineModels(body, exchangeRate) {
     ['doubao-seed-evolving', 'Doubao_Seed_Evolving'],
     ['doubao-seed-2.1-pro', 'Doubao_Seed_2.1_pro'],
     ['doubao-seed-2.1-turbo', 'Doubao_Seed_2.1_turbo'],
-    ['doubao-seed-2.0-lite', 'Doubao_Seed_2.0_Lite']
+    ['doubao-seed-2.0-lite', 'Doubao_Seed_2.0_Lite'],
+    ['doubao-seed-2.0-code', 'Doubao_Seed_2.0_code'],
+    ['doubao-seed-2.0-pro', 'Doubao_Seed_2.0_pro'],
+    ['doubao-seed-2.0-mini', 'Doubao_Seed_2.0_mini']
   ];
   return pairs.map(([model, label]) => {
-    const apiRates = volcengineApiInferenceRates(normalized, label);
+    // 接口响应本身是合法 JSON，其 DiscountInfo 含转义引号，反斜杠还原会把 JSON 改坏导致整源解析失败
+    const apiRates = volcengineApiInferenceRates(body, label);
     const rates = apiRates || volcengineInferenceRates(normalized, label);
     if (!rates) return null;
     const cacheWriteRate = apiRates ? 0 : rates.input;
@@ -815,7 +834,8 @@ function volcengineApiInferenceRates(body, configurationCode): ParsedRates | nul
     const rows = parseVolcenginePricingResponse(body)?.Result?.TableList
       ?.flatMap(table => table?.Rows || [])
       .filter(row => String(row?.ConfigurationCode || '').toLowerCase() === configurationCode.toLowerCase()) || [];
-    const baseTierRows = configurationCode.toLowerCase() === 'doubao_seed_2.0_lite'
+    // 2.0 系列的接口价按 32K/128K/256K 分档，取最低档作为基准价，长上下文档位不做区分
+    const baseTierRows = /^doubao_seed_2\.0_(lite|code|pro|mini)$/i.test(configurationCode)
       ? rows.filter(row => /_32k_/i.test(String(row?.ChargeItemCode || '')))
       : rows;
     const input = volcengineApiPrice(baseTierRows, 'infer_input_');
@@ -963,6 +983,7 @@ function parseTencentHunyuanModels(body, exchangeRate) {
 function parseQwenModels(body, exchangeRate) {
   const pairs = [
     ['qwen3.8', 'qwen3.8-max'],
+    ['qwen3.8-flash', 'qwen3.8-flash'],
     ['qwen3.7-plus', 'qwen3.7-plus'],
     ['qwen3.7-max', 'qwen3.7-max'],
     ['qwen3.6-flash', 'qwen3.6-flash'],
