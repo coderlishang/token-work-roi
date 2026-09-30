@@ -111,6 +111,38 @@ test('calculates the official GPT-6 Astra API rate', () => {
   assert.equal(astra.totalUSD, 73.5);
 });
 
+test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
+  const sol = calculateOfficialCost('openai/gpt-6-sol', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  const sol61 = calculateOfficialCost('gpt-6-1-sol', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  const luna = calculateOfficialCost('gpt-6-luna', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+
+  assert.equal(sol.priced, true);
+  assert.equal(sol.provider, 'openai');
+  assert.equal(sol.resolvedModel, 'gpt-6-sol');
+  assert.equal(sol.totalUSD, 14.7);
+  assert.equal(sol61.priced, true);
+  assert.equal(sol61.resolvedModel, 'gpt-6.1-sol');
+  assert.equal(sol61.totalUSD, 14.6);
+  assert.equal(luna.priced, true);
+  assert.equal(luna.resolvedModel, 'gpt-6-luna');
+  assert.equal(luna.totalUSD, 0.735);
+});
+
 test('keeps normalized official pricing aliases unique', () => {
   for (const rate of OFFICIAL_PRICE_TABLE) {
     assert.equal(new Set(rate.aliases).size, rate.aliases.length, rate.model);

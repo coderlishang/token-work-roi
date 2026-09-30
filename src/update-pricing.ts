@@ -34,6 +34,9 @@ interface PricingAsset {
 }
 const STABLE_ALIASES = new Map([
   ['openai::gpt-6-astra', ['gpt-6-astra', 'gpt_6_astra']],
+  ['openai::gpt-6-sol', ['gpt-6-sol']],
+  ['openai::gpt-6-1-sol', ['gpt-6.1-sol', 'gpt-6-1-sol']],
+  ['openai::gpt-6-luna', ['gpt-6-luna']],
   ['openai::gpt-5-6-sol', ['gpt-5.6-sol', 'gpt-5-6-sol']],
   ['openai::gpt-5-6-terra', ['gpt-5.6-terra', 'gpt-5-6-terra']],
   ['openai::gpt-5-6-luna', ['gpt-5.6-luna', 'gpt-5-6-luna']],
@@ -485,6 +488,8 @@ function discoverAssetUrls(source, body) {
 
 function parseSourceModels(source, body, exchangeRate) {
   if (isOpenAiGpt6AstraSource(source)) return parseOpenAiGpt6AstraModel(body);
+  if (isOpenAiGpt6SolLunaSource(source)) return parseOpenAiGpt6SolLunaModels(body);
+  if (isOpenAiGpt61SolSource(source)) return parseOpenAiGpt61SolModel(body);
   if (isOpenAiGpt56Source(source)) return parseOpenAiGpt56Models(body);
   if (source.provider === 'xai') return parseXaiModels(body);
   if (source.provider === 'anthropic-mythos') return parseAnthropicMythosModels(body);
@@ -507,6 +512,8 @@ function parseSourceModels(source, body, exchangeRate) {
 
 function sourceHasPricingParser(source) {
   return isOpenAiGpt6AstraSource(source)
+    || isOpenAiGpt6SolLunaSource(source)
+    || isOpenAiGpt61SolSource(source)
     || isOpenAiGpt56Source(source)
     || source.provider === 'xai'
     || source.provider === 'anthropic-mythos'
@@ -560,6 +567,49 @@ function parseOpenAiGpt56Models(body) {
       cacheWrite1h: inputRate * 1.25,
       output: outputRate
     }, 'openai-gpt-5.6', 'official-page', null, note));
+}
+
+// GPT-6 Sol/Luna 发布页：逐模型校验名称与四档价，对不上则跳过由内置价兜底
+function parseOpenAiGpt6SolLunaModels(body) {
+  const text = tableText(body).toLowerCase();
+  const expected: Array<[string, number, number, number, number, string]> = [
+    ['gpt-6-sol', 2, 0.2, 2.5, 10, 'OpenAI GPT-6 Sol standard API rate. Cache write is input × 1.25; cached input is input × 0.1.'],
+    ['gpt-6-luna', 0.1, 0.01, 0.125, 0.5, 'OpenAI GPT-6 Luna standard API rate. Cache write is input × 1.25; cached input is input × 0.1.']
+  ];
+  return expected
+    .filter(([model, input, cachedInput, cacheWrite, output]) => text.includes(model)
+      && [input, cachedInput, cacheWrite, output].every(price => mentionsExactUsdPrice(text, price)))
+    .map(([model, input, cachedInput, cacheWrite, output, note]) => rateModel('openai', model, {
+      input,
+      cachedInput,
+      cacheWrite5m: cacheWrite,
+      cacheWrite1h: cacheWrite,
+      output
+    }, 'openai-gpt-6-sol-luna', 'official-page', null, note));
+}
+
+function parseOpenAiGpt61SolModel(body) {
+  const text = tableText(body).toLowerCase();
+  const expectedRates = [2, 0.1, 2.5, 10];
+  if (!text.includes('gpt-6.1-sol') || !expectedRates.every(price => mentionsExactUsdPrice(text, price))) return [];
+  return [rateModel('openai', 'gpt-6.1-sol', {
+    input: 2,
+    cachedInput: 0.1,
+    cacheWrite5m: 2.5,
+    cacheWrite1h: 2.5,
+    output: 10
+  }, 'openai-gpt-6.1-sol', 'official-page', null, 'OpenAI GPT-6.1 Sol standard API rate. Cache write is input × 1.25; cached input is input × 0.05.')];
+}
+
+// 精确金额校验：$2.50 不能充当 $2、$0.125 不能充当 $0.1，仅允许小数末尾补零
+function mentionsExactUsdPrice(text, value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return false;
+  const [integer, decimals] = String(number).split('.');
+  const pattern = decimals
+    ? `\\$\\s*${integer}\\.${decimals}(?:0+)?(?![0-9])`
+    : `\\$\\s*${integer}(?:\\.0+)?(?![0-9])(?![.]0*[1-9])`;
+  return new RegExp(pattern).test(text);
 }
 
 function mentionsUsdPrice(text, value) {
@@ -1196,6 +1246,14 @@ function isOpenAiGpt56Source(source) {
 
 function isOpenAiGpt6AstraSource(source) {
   return providerKey(source?.provider) === 'openai gpt 6 astra';
+}
+
+function isOpenAiGpt6SolLunaSource(source) {
+  return providerKey(source?.provider) === 'openai gpt 6 sol luna';
+}
+
+function isOpenAiGpt61SolSource(source) {
+  return providerKey(source?.provider) === 'openai gpt 6.1 sol';
 }
 
 function providerKey(provider) {
