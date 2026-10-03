@@ -60,6 +60,8 @@ const STABLE_ALIASES = new Map([
   ['anthropic::claude-opus-4-5', ['claude-opus-4-5', 'claude-opus-4.5']],
   ['anthropic::claude-opus-5-5', ['claude-opus-5-5', 'claude-opus-5.5']],
   ['anthropic::claude-sonnet-4-5', ['claude-sonnet-4-5', 'claude-sonnet-4.5']],
+  ['anthropic::claude-sonnet-5-5', ['claude-sonnet-5-5', 'claude-sonnet-5.5']],
+  ['workbuddy::space-bunny', ['space-bunny', 'space-bunny-alpha']],
   ['gemini::gemini-3-8-flash', ['gemini-3.8-flash', 'gemini-3-8-flash']],
   ['gemini::gemini-3-7-flash', ['gemini-3.7-flash', 'gemini-3-7-flash']],
   ['gemini::gemini-3-6-flash', ['gemini-3.6-flash', 'gemini-3-6-flash']],
@@ -660,7 +662,9 @@ function parseAnthropicModels(body) {
   const opus55 = rates.find(rate => rate.label.includes('opus 5.5'));
   const fable5 = rates.find(rate => /fable\s+5(?![.-]\d)/.test(rate.label));
   const fable51 = rates.find(rate => rate.label.includes('fable 5.1'));
-  const sonnet5 = rates.find(rate => rate.label.includes('sonnet 5'));
+  // 5.5 卡片不能给 sonnet 5 供价，须各自命中
+  const sonnet5 = rates.find(rate => /sonnet\s+5(?![.-]\d)/.test(rate.label));
+  const sonnet55 = rates.find(rate => rate.label.includes('sonnet 5.5'));
   const sonnet = rates.find(rate => rate.label.includes('sonnet 4.6'));
   const opus45 = rates.find(rate => rate.label.includes('opus 4.5'));
   const sonnet45 = rates.find(rate => rate.label.includes('sonnet 4.5'));
@@ -673,6 +677,7 @@ function parseAnthropicModels(body) {
     ...['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6'].map(model => rateModel('anthropic', model, opus, 'anthropic')),
     rateModel('anthropic', 'claude-opus-4-5', opus45, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-5', sonnet5, 'anthropic'),
+    rateModel('anthropic', 'claude-sonnet-5-5', sonnet55, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-6', sonnet, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-5', sonnet45, 'anthropic'),
     rateModel('anthropic', 'claude-haiku-4-5', haiku, 'anthropic')
