@@ -143,6 +143,39 @@ test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
   assert.equal(luna.totalUSD, 0.735);
 });
 
+test('prices WorkBuddy space-bunny and Claude Sonnet 5.5', () => {
+  const bunny = calculateOfficialCost('space-bunny', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  }, { provider: 'WorkBuddy' });
+  const bunnyAlias = calculateOfficialCost('space-bunny-alpha', { input: 1_000_000, output: 1_000_000 });
+  const sonnet55 = calculateOfficialCost('claude-sonnet-5.5', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+
+  assert.equal(bunny.priced, true);
+  assert.equal(bunny.provider, 'WorkBuddy');
+  assert.equal(bunny.resolvedModel, 'space-bunny');
+  assert.equal(bunny.totalUSD, 0);
+  assert.equal(bunnyAlias.resolvedModel, 'space-bunny');
+  assert.equal(sonnet55.priced, true);
+  assert.equal(sonnet55.resolvedModel, 'claude-sonnet-5-5');
+  assert.equal(sonnet55.totalUSD, 14.6);
+  const haiku55 = calculateOfficialCost('claude-haiku-5.5', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  assert.equal(haiku55.priced, true);
+  assert.equal(haiku55.resolvedModel, 'claude-haiku-5-5');
+  assert.equal(haiku55.totalUSD, 0.735);
+});
+
 test('keeps normalized official pricing aliases unique', () => {
   for (const rate of OFFICIAL_PRICE_TABLE) {
     assert.equal(new Set(rate.aliases).size, rate.aliases.length, rate.model);

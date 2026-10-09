@@ -60,6 +60,9 @@ const STABLE_ALIASES = new Map([
   ['anthropic::claude-opus-4-5', ['claude-opus-4-5', 'claude-opus-4.5']],
   ['anthropic::claude-opus-5-5', ['claude-opus-5-5', 'claude-opus-5.5']],
   ['anthropic::claude-sonnet-4-5', ['claude-sonnet-4-5', 'claude-sonnet-4.5']],
+  ['anthropic::claude-sonnet-5-5', ['claude-sonnet-5-5', 'claude-sonnet-5.5']],
+  ['anthropic::claude-haiku-5-5', ['claude-haiku-5-5', 'claude-haiku-5.5']],
+  ['workbuddy::space-bunny', ['space-bunny', 'space-bunny-alpha']],
   ['gemini::gemini-3-8-flash', ['gemini-3.8-flash', 'gemini-3-8-flash']],
   ['gemini::gemini-3-7-flash', ['gemini-3.7-flash', 'gemini-3-7-flash']],
   ['gemini::gemini-3-6-flash', ['gemini-3.6-flash', 'gemini-3-6-flash']],
@@ -642,8 +645,12 @@ function parseAnthropicModels(body) {
   const rates = cards.map(card => {
     const name = card.match(/__modelName[^>]*>([^<]+)</)?.[1];
     if (!name) return null;
-    const input = priceOf(card, 'Input');
-    const output = priceOf(card, 'Output');
+    // Haiku 5.5 卡为分档标签(≤100K/>100K),两处同名低档标签依次为 input/output
+    const tiered = name.toLowerCase().includes('haiku 5.5')
+      ? [...card.matchAll(/__priceLabel[^>]*>Prompts ≤ 100K tokens<\/p>(?:(?!__priceLabel)[\s\S]){0,120}?__priceValue[^>]*>\$([0-9.]+)/g)].map(match => Number(match[1]))
+      : null;
+    const input = tiered ? tiered[0] : priceOf(card, 'Input');
+    const output = tiered ? tiered[1] : priceOf(card, 'Output');
     if (input == null || output == null) return null;
     return {
       label: name.toLowerCase(),
@@ -660,7 +667,10 @@ function parseAnthropicModels(body) {
   const opus55 = rates.find(rate => rate.label.includes('opus 5.5'));
   const fable5 = rates.find(rate => /fable\s+5(?![.-]\d)/.test(rate.label));
   const fable51 = rates.find(rate => rate.label.includes('fable 5.1'));
-  const sonnet5 = rates.find(rate => rate.label.includes('sonnet 5'));
+  // 5.5 卡片不能给 sonnet 5 供价，须各自命中
+  const sonnet5 = rates.find(rate => /sonnet\s+5(?![.-]\d)/.test(rate.label));
+  const sonnet55 = rates.find(rate => rate.label.includes('sonnet 5.5'));
+  const haiku55 = rates.find(rate => rate.label.includes('haiku 5.5'));
   const sonnet = rates.find(rate => rate.label.includes('sonnet 4.6'));
   const opus45 = rates.find(rate => rate.label.includes('opus 4.5'));
   const sonnet45 = rates.find(rate => rate.label.includes('sonnet 4.5'));
@@ -673,8 +683,10 @@ function parseAnthropicModels(body) {
     ...['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6'].map(model => rateModel('anthropic', model, opus, 'anthropic')),
     rateModel('anthropic', 'claude-opus-4-5', opus45, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-5', sonnet5, 'anthropic'),
+    rateModel('anthropic', 'claude-sonnet-5-5', sonnet55, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-6', sonnet, 'anthropic'),
     rateModel('anthropic', 'claude-sonnet-4-5', sonnet45, 'anthropic'),
+    rateModel('anthropic', 'claude-haiku-5-5', haiku55, 'anthropic'),
     rateModel('anthropic', 'claude-haiku-4-5', haiku, 'anthropic')
   ].filter(Boolean);
 }

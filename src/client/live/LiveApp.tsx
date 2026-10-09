@@ -24,9 +24,12 @@ export function LiveApp() {
   useEffect(() => {
     document.body.classList.add('pulse-live-body');
     document.body.classList.toggle('desktop-pulse-body', isDesktopPulse);
+    // SPA 进入时 head 内联脚本不会重跑,此处补挂
+    document.documentElement.classList.add('live-route');
     return () => {
       document.body.classList.remove('pulse-live-body');
       document.body.classList.remove('desktop-pulse-body');
+      document.documentElement.classList.remove('live-route');
     };
   }, [isDesktopPulse]);
 

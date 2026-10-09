@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // /live 首帧深色底;须在任何外部样式表之前,避免脚本被阻塞
+      if (location.pathname === '/live') document.documentElement.classList.add('live-route');
+    </script>
+    <style>html.live-route{background:#040813}</style>
     <title>元衡 Token Work ROI</title>
     <meta name="token-work-app" content="token-work-roi" />
     <meta name="application-name" content="元衡 Token Work" />
@@ -16,6 +21,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <script>
+      // body 默认浅底,主题类在 React 挂载前先补上
+      if (document.documentElement.classList.contains('live-route')) {
+        document.body.classList.add('pulse-live-body');
+        if (new URLSearchParams(location.search).get('surface') === 'desktop') {
+          document.body.classList.add('desktop-pulse-body');
+        }
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/client/main.tsx"></script>
   </body>
