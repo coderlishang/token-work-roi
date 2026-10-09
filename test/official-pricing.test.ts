@@ -165,6 +165,15 @@ test('prices WorkBuddy space-bunny and Claude Sonnet 5.5', () => {
   assert.equal(sonnet55.priced, true);
   assert.equal(sonnet55.resolvedModel, 'claude-sonnet-5-5');
   assert.equal(sonnet55.totalUSD, 14.6);
+  const haiku55 = calculateOfficialCost('claude-haiku-5.5', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  assert.equal(haiku55.priced, true);
+  assert.equal(haiku55.resolvedModel, 'claude-haiku-5-5');
+  assert.equal(haiku55.totalUSD, 0.735);
 });
 
 test('keeps normalized official pricing aliases unique', () => {

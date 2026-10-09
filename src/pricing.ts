@@ -728,6 +728,18 @@ export const OFFICIAL_PRICE_TABLE = [
   }),
   officialRate({
     provider: "anthropic",
+    model: "claude-haiku-5-5",
+    aliases: ["claude-haiku-5-5"],
+    input: 0.1,
+    cachedInput: 0.01,
+    cacheWrite5m: 0.125,
+    cacheWrite1h: 0.2,
+    output: 0.5,
+    source: "anthropic",
+    note: "First-party Claude API pricing; tiered prompt pricing uses the base ≤100K tier; cache write defaults to 5-minute prompt caching."
+  }),
+  officialRate({
+    provider: "anthropic",
     model: "claude-haiku-4-5",
     aliases: ["claude-haiku-4-5"],
     input: 1,
