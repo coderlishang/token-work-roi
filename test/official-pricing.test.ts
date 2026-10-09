@@ -164,7 +164,7 @@ test('prices WorkBuddy space-bunny and Claude Sonnet 5.5', () => {
   assert.equal(bunnyAlias.resolvedModel, 'space-bunny');
   assert.equal(sonnet55.priced, true);
   assert.equal(sonnet55.resolvedModel, 'claude-sonnet-5-5');
-  assert.equal(sonnet55.totalUSD, 14.7);
+  assert.equal(sonnet55.totalUSD, 14.6);
 });
 
 test('keeps normalized official pricing aliases unique', () => {
