@@ -11,7 +11,7 @@ interface DashboardFilters {
 }
 
 export function sessionModel(session: UsageRow = {}) {
-  return session.model || session.pricingModel || '';
+  return session.modelLabel || session.model || session.pricingModel || '';
 }
 
 export function filterSessionsByDashboardFilters(sessions: UsageRow[] = [], filters: DashboardFilters = {}) {
@@ -78,7 +78,7 @@ export function buildModelUsageRows(dailyRows: UsageRow[] = [], sessions: UsageR
   };
 
   for (const row of dailyRows) {
-    const model = row.model || 'unknown';
+    const model = row.modelLabel || row.model || 'unknown';
     const target = ensure(model);
     target.hasDaily = true;
     target.sources.add(row.source);

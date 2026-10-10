@@ -532,7 +532,7 @@ export function App({ routeMode = 'dashboard' }) {
    Dashboard (extracted so App stays clean)
    ============================================================= */
 function Dashboard({
-  M,
+  M: rawM,
   refreshing,
   collecting,
   collectStatus,
@@ -600,11 +600,14 @@ function Dashboard({
     });
   }, []);
 
+  // 同一模型的多种写法统一显示名后再进入筛选与聚合
+  const M = useMemo(() => U.withModelLabels(rawM), [rawM]);
+
   // Build option lists
   const allSources = useMemo(() => Array.from(new Set(M.daily.map(r => r.source))), [M.daily]);
   const allDevices = useMemo(() => Array.from(new Set(M.daily.map(r => r.device))), [M.daily]);
   const allModels  = useMemo(() => Array.from(new Set([
-    ...M.daily.map(r => r.model),
+    ...M.daily.map(r => r.modelLabel || r.model),
     ...M.sessions.map(sessionModel)
   ])).filter(Boolean), [M.daily, M.sessions]);
   const availableRange = useMemo(() => {

@@ -297,7 +297,8 @@ export function buildModelRows(daily = []) {
   const rows = new Map();
   const totalTokens = daily.reduce((sum, row) => sum + (row.totalTokens || 0), 0);
   for (const row of daily) {
-    const model = row.model || '<unknown>';
+    // 同一模型多种写法归并到 modelLabel,报告里同模型不拆行
+    const model = row.modelLabel || row.model || '<unknown>';
     const source = row.source || 'unknown';
     const key = `${model}::${source}`;
     if (!rows.has(key)) {

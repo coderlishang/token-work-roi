@@ -249,8 +249,36 @@ function filterDaily(rows, f) {
     r.usageDate >= f.startDate && r.usageDate <= f.endDate &&
     (f.sources.size === 0 || f.sources.has(r.source)) &&
     (f.devices.size === 0 || f.devices.has(r.device)) &&
-    (f.models.size  === 0 || f.models.has(r.model))
+    (f.models.size  === 0 || f.models.has(r.modelLabel || r.model))
   );
+}
+
+// 同一模型不同写法(点/横杠/API 名)按 pricingModel 归并,行上补 modelLabel(组内按写法汇总 totalTokens 最大的原始写法)
+function withModelLabels(data) {
+  const rows = [...(data.daily || []), ...(data.sessions || [])];
+  const sums = new Map(); // key -> Map(写法 -> token 总量)
+  for (const r of rows) {
+    const key = r.pricingModel || r.model;
+    if (!key) continue;
+    const byLabel = sums.get(key) || new Map();
+    byLabel.set(r.model || key, (byLabel.get(r.model || key) || 0) + (r.totalTokens || 0));
+    sums.set(key, byLabel);
+  }
+  const best = new Map();
+  for (const [key, byLabel] of sums) {
+    let label = key;
+    let max = -1;
+    for (const [spelling, tokens] of byLabel) {
+      if (tokens > max) { max = tokens; label = spelling; }
+    }
+    best.set(key, label);
+  }
+  const labelOf = r => best.get(r.pricingModel || r.model) || r.model;
+  return {
+    ...data,
+    daily: (data.daily || []).map(r => ({ ...r, modelLabel: labelOf(r) })),
+    sessions: (data.sessions || []).map(r => ({ ...r, modelLabel: labelOf(r) }))
+  };
 }
 
 function cacheHitRate(inputTokens, cacheReadTokens, cacheCreationTokens = 0) {
@@ -352,6 +380,6 @@ export const U = {
   getExchangeRate, setExchangeRate, loadExchangeRate, startExchangeRateRefresh, exchangeRateLabel, exchangeRateSourceLabel,
   compact, compactCN, pct, deltaPct, formatTs,
   localDateStr, daysAgo, addDays, rangeDates,
-  filterDaily, cacheHitRate, aggregateTotals, groupByDate, uniqueValues,
+  filterDaily, cacheHitRate, aggregateTotals, groupByDate, uniqueValues, withModelLabels,
   csvCell, downloadCSV, downloadText, projectLabel, alpha
 };

@@ -169,6 +169,46 @@ test('live snapshot recalculates a zero stored cost for a priced session', () =>
   assert.ok(snapshot.activeSessions[0].costUSD > 0);
 });
 
+test('live snapshot merges same-model spellings under the dominant raw name', () => {
+  const snapshot = buildLiveSnapshot({
+    now: new Date('2026-10-09T12:00:00Z'),
+    windowMinutes: 1440,
+    tokenEvents: [
+      {
+        source: 'WorkBuddy', sessionId: 'wb-1', model: 'deepseek-v4.1-flash',
+        timestamp: '2026-10-09T10:00:00Z',
+        inputTokens: 480_000, outputTokens: 320_000
+      },
+      {
+        source: 'WorkBuddy', sessionId: 'wb-1', model: 'deepseek-v4.1-flash',
+        timestamp: '2026-10-09T10:30:00Z',
+        inputTokens: 120_000, outputTokens: 80_000
+      },
+      {
+        source: 'Claude Code', sessionId: 'cc-1', model: 'deepseek-v4-1-flash',
+        timestamp: '2026-10-09T11:00:00Z',
+        inputTokens: 12_000, outputTokens: 8_000
+      },
+      {
+        // 单事件 token 大于任何一个 v4.1-flash 事件,但写法总量(500k)不及 v4.1-flash(1M)
+        source: 'DeepSeek Harness', sessionId: 'ds-1', model: 'deepseek-flash',
+        timestamp: '2026-10-09T11:30:00Z',
+        inputTokens: 300_000, outputTokens: 200_000
+      },
+      {
+        source: 'WorkBuddy', sessionId: 'wb-1', model: 'deepseek-v4-flash',
+        timestamp: '2026-10-09T11:45:00Z',
+        inputTokens: 4_000, outputTokens: 3_000
+      }
+    ]
+  });
+
+  assert.deepEqual(snapshot.byModel.map(row => row.key), ['deepseek-v4.1-flash', 'deepseek-v4-flash']);
+  assert.equal(snapshot.byModel[0].requests, 4);
+  assert.equal(snapshot.byModel[0].totalTokens, 1_520_000);
+  assert.equal(snapshot.byModel[1].totalTokens, 7_000);
+});
+
 test('live data freshness explains collecting, stale and empty states', () => {
   assert.equal(buildLiveDataFreshness({
     collectionState: { status: 'running' }

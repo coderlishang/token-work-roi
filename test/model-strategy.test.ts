@@ -129,3 +129,26 @@ test('buildModelStrategy asks for labels when coverage is low', () => {
   assert.equal(strategy.playbook[0].evidenceState, '待标注验证');
   assert.equal(strategy.recommendations[0].id, 'label-before-model-policy');
 });
+
+test('buildModelRowsFromSessions merges same-model spellings via modelLabel', () => {
+  const rows = buildModelRowsFromSessions([
+    { sessionId: 'a', model: 'deepseek-v4.1-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 300, costUSD: 0.1, pricingStatus: 'priced', outputStatus: '已发布', valueLevel: '关键' },
+    { sessionId: 'b', model: 'deepseek-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 200, costUSD: 0.1, pricingStatus: 'priced', outputStatus: '已发布', valueLevel: '关键' },
+    { sessionId: 'c', model: 'DeepSeek-V4.1-Flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 100, costUSD: 0.1, pricingStatus: 'priced', outputStatus: '已发布', valueLevel: '关键' }
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].model, 'deepseek-v4.1-flash');
+  assert.equal(rows[0].sessionCount, 3);
+  assert.equal(rows[0].totalTokens, 600);
+});
+
+test('topModelFor merges same-model spellings via modelLabel', async () => {
+  const { RU } = await import('../src/client/review/utils.ts');
+  const top = RU.topModelFor([
+    { model: 'deepseek-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 100 },
+    { model: 'deepseek-v4.1-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 50 }
+  ], () => true);
+
+  assert.equal(top, 'deepseek-v4.1-flash');
+});

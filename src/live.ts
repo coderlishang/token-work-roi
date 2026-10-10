@@ -93,7 +93,7 @@ export function buildLiveSnapshot({
     ? recentEvents
     : hasEventHistory ? [] : recentSessions;
   const sourceRows = aggregate(metricRows, 'source');
-  const modelRows = aggregate(metricRows, 'model')
+  const modelRows = aggregateModels(metricRows)
     .filter(row => row.key !== '<synthetic>' && number(row.totalTokens) > 0);
   const activeSessions = recentSessions
     .filter(session => session.model !== '<synthetic>')
@@ -757,6 +757,36 @@ function aggregate(rows, field) {
       totalTokens: row.totalTokens,
       costUSD: row.costUSD
     }))
+    .sort((a, b) => b.totalTokens - a.totalTokens)
+    .slice(0, 10);
+}
+
+// 模型维度聚合:同一模型不同写法(点/横杠/API 名)按官方价条目归并,行键取组内按写法汇总 totalTokens 最大的原始写法
+function aggregateModels(rows) {
+  const byGroup = new Map();
+  for (const row of rows) {
+    const group = resolveOfficialPricing(row.model)?.model || row.model || 'unknown';
+    let target = byGroup.get(group);
+    if (!target) {
+      byGroup.set(group, { keySums: new Map(), sessions: new Set(), requests: 0, totalTokens: 0, costUSD: 0 });
+      target = byGroup.get(group);
+    }
+    target.sessions.add(row.sessionId);
+    target.requests += 1;
+    target.totalTokens += row.totalTokens;
+    target.costUSD += row.costUSD;
+    const spelling = row.model || group;
+    target.keySums.set(spelling, (target.keySums.get(spelling) || 0) + number(row.totalTokens));
+  }
+  return [...byGroup.values()]
+    .map(({ keySums, sessions, requests, totalTokens, costUSD }) => {
+      let key = '';
+      let max = -1;
+      for (const [spelling, tokens] of keySums) {
+        if (tokens > max) { max = tokens; key = spelling; }
+      }
+      return { key, sessions: sessions.size, requests, totalTokens, costUSD };
+    })
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 10);
 }

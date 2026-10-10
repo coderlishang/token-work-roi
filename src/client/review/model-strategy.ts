@@ -54,7 +54,8 @@ export function buildModelRowsFromSessions(sessions: UsageRow[] = []) {
   const rows = new Map();
   const totalTokens = sessions.reduce((sum, session) => sum + (session.totalTokens || 0), 0);
   for (const session of sessions) {
-    const model = session.model || session.pricingModel || '<unknown>';
+    // 同一模型多种写法归并到 modelLabel,避免同模型拆成多行
+    const model = session.modelLabel || session.model || session.pricingModel || '<unknown>';
     if (!rows.has(model)) {
       rows.set(model, {
         model,
@@ -105,7 +106,7 @@ function buildDimensionRows(sessions, field, defaultValue) {
       });
     }
     const row = rows.get(key);
-    const model = session.model || session.pricingModel || '<unknown>';
+    const model = session.modelLabel || session.model || session.pricingModel || '<unknown>';
     const tokens = session.totalTokens || 0;
     row.sessionCount += 1;
     row.totalTokens += tokens;
@@ -242,7 +243,7 @@ function buildStrategyRecommendations({ sessions, annotated, modelRows }) {
       && ['light', 'mid'].includes(tier);
   });
   if (reusable.length) {
-    const models = Array.from(new Set(reusable.map(session => session.model || session.pricingModel).filter(Boolean))).slice(0, 3);
+    const models = Array.from(new Set(reusable.map(session => session.modelLabel || session.model || session.pricingModel).filter(Boolean))).slice(0, 3);
     recommendations.push({
       id: 'keep-high-value-pattern',
       title: '保留高价值低成本模型组合',

@@ -196,6 +196,8 @@ function ReviewDashboard({ rawData, onReloadData }) {
 
   const daily = useMemo(() => RU.filterByPeriod(rawData.daily, period), [rawData, period]);
   const sessions = useMemo(() => RU.filterSessionsByPeriod(rawData.sessions, period), [rawData, period]);
+  // 同一模型多种写法归并后再进模型策略与报告,行上补 modelLabel
+  const labeled = useMemo(() => U.withModelLabels({ daily, sessions }), [daily, sessions]);
   const prevDaily = useMemo(() =>
     prevPeriod ? RU.filterByPeriod(rawData.daily, prevPeriod) : []
   , [rawData, prevPeriod]);
@@ -296,8 +298,8 @@ function ReviewDashboard({ rawData, onReloadData }) {
     buildRoiAdvisor({ sessions, daily })
   , [sessions, daily]);
   const modelStrategy = useMemo(() =>
-    buildModelStrategy({ sessions })
-  , [sessions]);
+    buildModelStrategy({ sessions: labeled.sessions })
+  , [labeled]);
   const closureProgress = useMemo(() =>
     buildReviewClosureProgress({ sessions, roiAdvice })
   , [sessions, roiAdvice]);
@@ -355,8 +357,8 @@ function ReviewDashboard({ rawData, onReloadData }) {
   const markdownReport = useMemo(() =>
     buildMarkdownReviewReport({
       period,
-      daily,
-      sessions,
+      daily: labeled.daily,
+      sessions: labeled.sessions,
       workItems: rawData.workItems || [],
       roiAdvice,
       savingsSimulation,
@@ -366,7 +368,7 @@ function ReviewDashboard({ rawData, onReloadData }) {
       evidenceFlywheel,
       localTrust
     })
-  , [period, daily, sessions, rawData.workItems, roiAdvice, insights, savingsSimulation, advisorActions, actionMeasurements, coverageBridge, evidenceFlywheel, localTrust]);
+  , [period, labeled, rawData.workItems, roiAdvice, insights, savingsSimulation, advisorActions, actionMeasurements, coverageBridge, evidenceFlywheel, localTrust]);
 
   const blogMaterial = useMemo(() => buildTechnicalBlogDraft({
     sessions,
@@ -697,7 +699,7 @@ function ReviewDashboard({ rawData, onReloadData }) {
       id: 'projects',
       label: '04 · 项目',
       className: 'page slide-scroll',
-      content: <ProjectSection daily={daily} totalTokens={totals.total}/>
+      content: <ProjectSection daily={labeled.daily} totalTokens={totals.total}/>
     },
     {
       id: 'calendar',
@@ -711,7 +713,7 @@ function ReviewDashboard({ rawData, onReloadData }) {
       label: '06 · 工具',
       className: 'page-wide slide-scroll',
       innerClassName: 'review-page-narrow',
-      content: <ToolsSection daily={daily} totalTokens={totals.total}/>
+      content: <ToolsSection daily={labeled.daily} totalTokens={totals.total}/>
     },
     {
       id: 'efficiency',

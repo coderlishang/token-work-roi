@@ -363,7 +363,7 @@ function TopModels({ rows, onDrillModel }) {
   const byModel = new Map();
   for (const r of rows) {
     if (!r.model) continue;
-    const k = r.model;
+    const k = r.modelLabel || r.model;
     if (!byModel.has(k)) byModel.set(k, { model: k, source: r.source, sources: new Map(), total: 0, cost: 0, count: 0 });
     const m = byModel.get(k);
     m.total += r.totalTokens;

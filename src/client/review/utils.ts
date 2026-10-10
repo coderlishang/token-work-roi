@@ -167,7 +167,9 @@ function topModelFor(rows, filterFn) {
   const m = new Map();
   for (const r of rows) {
     if (!filterFn(r)) continue;
-    m.set(r.model, (m.get(r.model) || 0) + r.totalTokens);
+    // 同一模型多种写法归并到 modelLabel
+    const name = r.modelLabel || r.model;
+    m.set(name, (m.get(name) || 0) + r.totalTokens);
   }
   let topName = '—', topVal = -1;
   for (const [k, v] of m) if (v > topVal) { topName = k; topVal = v; }
