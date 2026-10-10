@@ -892,9 +892,7 @@ button, input, select { font-family: inherit; color: inherit; }
 
 .model-card-sub span:last-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal; /* 来源多的模型(如 DeepSeek Harness)换行完整展示,不走省略号 */
   text-align: right;
 }
 
@@ -2586,8 +2584,8 @@ button, input, select { font-family: inherit; color: inherit; }
 .legend-item:hover { background: var(--surface-2); }
 .legend-item.dim { opacity: 0.4; }
 .legend-swatch { width: 8px; height: 8px; border-radius: 2px; grid-row: 1 / span 2; }
-/* 名称/数值均禁换行省略截断：窄列下图例项恒定两行，避免逐字符断行撑高面板 */
-.legend-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.25; }
+/* 数值保持单行省略；名称允许换行完整展示，长来源名(DeepSeek Harness)不截断 */
+.legend-name { min-width: 0; overflow: hidden; overflow-wrap: anywhere; line-height: 1.25; }
 .legend-val { grid-column: 2; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 11.5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .legend-pct { grid-column: 3; grid-row: 1 / span 2; align-self: center; font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; min-width: 36px; text-align: right; }
 
@@ -2670,7 +2668,7 @@ button, input, select { font-family: inherit; color: inherit; }
   white-space: normal;
 }
 .compact-tag {
-  max-width: 118px;
+  max-width: 140px; /* 容下最长来源名(DeepSeek Harness/Hermes Agent (JS)),省略号只兜异常超长 */
   overflow: hidden;
   white-space: nowrap; /* 固定 20px 高,长来源名走省略号而非换行被裁 */
 }
@@ -4090,7 +4088,7 @@ table.dt input[type="checkbox"] {
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .compact-tag {
-    max-width: 96px;
+    max-width: 140px;
   }
   .model-card-meta,
   .model-card-sub {

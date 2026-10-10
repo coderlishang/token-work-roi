@@ -312,3 +312,14 @@ test('buildModelRows aggregates by model and source', () => {
 test('buildReviewReportFilename uses the active period end date', () => {
   assert.equal(buildReviewReportFilename(period), 'token-work-review-2026-06-12.md');
 });
+
+test('buildModelRows merges same-model spellings via modelLabel', () => {
+  const rows = buildModelRows([
+    { source: 'WorkBuddy', model: 'deepseek-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 100, costUSD: 0.1 },
+    { source: 'WorkBuddy', model: 'deepseek-v4.1-flash', modelLabel: 'deepseek-v4.1-flash', totalTokens: 400, costUSD: 0.2 }
+  ]);
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].model, 'deepseek-v4.1-flash');
+  assert.equal(rows[0].totalTokens, 500);
+});

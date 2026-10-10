@@ -186,7 +186,7 @@ function TablePanel({
       x.outputTokens += r.outputTokens;
       x.cacheReadTokens += r.cacheReadTokens;
       x.costUSD += r.costUSD;
-      x.models.add(r.model);
+      x.models.add(r.modelLabel || r.model);
     }
     return Array.from(m.values()).map(x => ({...x, modelCount: x.models.size}));
   }, [daily]);
@@ -194,8 +194,8 @@ function TablePanel({
   const byModel = useMemo(() => {
     const m = new Map();
     for (const r of daily) {
-      const k = `${r.source}::${r.model}`;
-      if (!m.has(k)) m.set(k, { source: r.source, model: r.model, totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUSD: 0, days: new Set() });
+      const k = `${r.source}::${r.modelLabel || r.model}`;
+      if (!m.has(k)) m.set(k, { source: r.source, model: r.modelLabel || r.model, totalTokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, costUSD: 0, days: new Set() });
       const x = m.get(k);
       x.totalTokens += r.totalTokens;
       x.inputTokens += r.inputTokens;
@@ -1387,7 +1387,12 @@ function DrillDrawer({ drill, daily, onClose }) {
     const { kind, row } = drill;
     let title = '', sub = '', filterFn = (_row: UsageRow) => true;
     if (kind === 'source') { title = row.source; sub = row.device; filterFn = r => r.source === row.source && r.device === row.device; }
-    if (kind === 'model')  { title = row.model;  sub = row.source; filterFn = r => r.source === row.source && r.model === row.model; }
+    if (kind === 'model')  {
+      title = row.model;
+      // 模型已跨来源归并,sub 展示全部来源,下钻按统一名匹配所有来源,与条行口径一致
+      sub = (row.sourceList || []).map(([s]) => s).join('、') || row.source || '';
+      filterFn = r => (r.modelLabel || r.model) === row.model;
+    }
     if (kind === 'session'){ title = row.projectPath || row.sessionId; sub = `${row.source} · ${row.device}`;
       filterFn = r => r.source === row.source; /* session doesn't tie to daily directly — show source's daily */ }
     if (kind === 'run')    { title = `采集: ${row.source}`; sub = U.formatTs(row.collectedAt); filterFn = () => false; }
