@@ -362,6 +362,29 @@ test('prices Hy4 Preview from official Tencent TokenHub rates', () => {
   ) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
 });
 
+test('prices Step-5 Preview from official StepFun RMB rates', () => {
+  const cost = calculateOfficialCost('step-5-preview', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  const caseVariant = calculateOfficialCost('Step-5-Preview', { input: 1_000_000 });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'step-5-preview');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'StepFun');
+  assert.equal(cost.resolvedModel, 'step-5-preview');
+  assert.equal(caseVariant.resolvedModel, 'step-5-preview');
+  assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
+
+  const { input, cachedInput, cacheWrite5m, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.equal(cacheWrite5m, input);
+  assert.ok(Math.abs(cost.totalUSD - (
+    input + cachedInput + output
+  ) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+});
+
 test('resolves current model labels with vendor separators', () => {
   for (const [model, resolvedModel] of [
     ['GLM 5.3 Flash', 'glm-5.3-flash'],

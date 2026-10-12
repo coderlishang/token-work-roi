@@ -248,6 +248,15 @@ export const OFFICIAL_PRICING_SOURCES = [
     label: 'Tencent TokenHub model pricing',
     url: 'https://cloud.tencent.com/document/product/1823/130055',
     note: 'Tencent TokenHub RMB prices are converted to USD for internal cost math.'
+  },
+  {
+    provider: 'StepFun',
+    label: 'StepFun Open Platform pricing',
+    url: 'https://platform.stepfun.com/docs/zh/guides/pricing/details',
+    assetUrls: [
+      'https://platform.stepfun.com/docs/zh/guides/pricing/details.md'
+    ],
+    note: 'Official StepFun Open Platform RMB prices converted to USD for internal cost math.'
   }
 ];
 
@@ -1564,6 +1573,19 @@ export const OFFICIAL_PRICE_TABLE = [
     output: 0,
     source: "WorkBuddy",
     note: "Promotional free listing during the WorkBuddy exclusive launch; no public per-token rates have been published yet."
+  }),
+  officialRate({
+    provider: "StepFun",
+    model: "step-5-preview",
+    aliases: ["step-5-preview"],
+    input: 1.042402708460066,
+    cachedInput: 0.05212013542300329,
+    cacheWrite5m: 1.042402708460066,
+    cacheWrite1h: 1.042402708460066,
+    output: 2.9782934527430456,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":7,"output":20,"cachedInput":0.35,"cacheWrite5m":7,"cacheWrite1h":7},"exchangeRate":6.715255,"sourceUnit":"元 / 1M tokens"},
+    source: "StepFun",
+    note: "Official StepFun Open Platform RMB rate converted to USD at the last verified refresh rate."
   })
 ];
 
