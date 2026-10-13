@@ -96,7 +96,7 @@ interface CachedRateInput {
   note?: string | null;
 }
 
-interface PricingData {
+export interface PricingData {
   mode?: string;
   verifiedAt?: string;
   fetchedAt?: string | null;
