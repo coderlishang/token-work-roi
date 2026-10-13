@@ -1,4 +1,4 @@
-import { calculateOfficialCost, resolveOfficialPricing } from './pricing.ts';
+import { calculateOfficialCost, resolveOfficialPricing, type PricingData } from './pricing.ts';
 import { providerFromSource } from './provider.ts';
 
 const DEFAULT_WINDOW_MINUTES = 15;
@@ -54,6 +54,8 @@ interface BuildLiveSnapshotInput {
   refreshIntervalSeconds?: number;
   autoCollectEnabled?: boolean;
   demoMode?: boolean;
+  // 盘上价格缓存:不传则退回进程内置价表(运行中新增的定价不生效)
+  pricingData?: PricingData | null;
 }
 
 export function buildLiveSnapshot({
@@ -69,17 +71,18 @@ export function buildLiveSnapshot({
   collectionState = null,
   refreshIntervalSeconds = 60,
   autoCollectEnabled = false,
-  demoMode = false
+  demoMode = false,
+  pricingData = null
 }: BuildLiveSnapshotInput = {}) {
   const nowMs = new Date(now).getTime();
   windowMinutes = Math.max(1, positiveNumber(windowMinutes, DEFAULT_WINDOW_MINUTES));
   const windowMs = windowMinutes * 60 * 1000;
   const sinceMs = nowMs - windowMs;
   const normalizedEvents = tokenEvents
-    .map(normalizeEvent)
+    .map(event => normalizeEvent(event, pricingData))
     .filter(row => row.model !== '<synthetic>' || row.totalTokens > 0);
   const normalizedSessions = sessions
-    .map(normalizeSession)
+    .map(session => normalizeSession(session, pricingData))
     .filter(row => row.model !== '<synthetic>' || row.totalTokens > 0);
   const recentEvents = normalizedEvents
     .filter(event => event.timestampMs >= sinceMs && event.timestampMs <= nowMs);
@@ -93,7 +96,7 @@ export function buildLiveSnapshot({
     ? recentEvents
     : hasEventHistory ? [] : recentSessions;
   const sourceRows = aggregate(metricRows, 'source');
-  const modelRows = aggregateModels(metricRows)
+  const modelRows = aggregateModels(metricRows, pricingData)
     .filter(row => row.key !== '<synthetic>' && number(row.totalTokens) > 0);
   const activeSessions = recentSessions
     .filter(session => session.model !== '<synthetic>')
@@ -117,7 +120,8 @@ export function buildLiveSnapshot({
   const budgetWindows = buildBudgetWindows({
     rows: hasEventHistory ? normalizedEvents : normalizedSessions,
     budgetProfiles,
-    nowMs
+    nowMs,
+    pricingData
   });
 
   const snapshot = {
@@ -161,7 +165,7 @@ export function buildLiveSnapshot({
     demoMode
   });
   const guardrails = liveGuardrailConfig(guardrailConfig);
-  const warnings = buildLiveGuardrails(snapshot, guardrails);
+  const warnings = buildLiveGuardrails(snapshot, guardrails, pricingData);
   const { adviceContext: _adviceContext, ...publicSnapshot } = snapshot;
   return {
     ...publicSnapshot,
@@ -231,7 +235,7 @@ export function buildLiveDataFreshness({
   };
 }
 
-export function buildLiveGuardrails(snapshot: LiveSnapshotInput = {}, config: GuardrailOverrides = {}) {
+export function buildLiveGuardrails(snapshot: LiveSnapshotInput = {}, config: GuardrailOverrides = {}, pricingData: PricingData | null = null) {
   const guardrails = liveGuardrailConfig(config);
   const totals = snapshot.totals || {};
   const warnings = [];
@@ -284,7 +288,7 @@ export function buildLiveGuardrails(snapshot: LiveSnapshotInput = {}, config: Gu
 
   const unpricedModels = (snapshot.byModel || [])
     .map(row => row.key)
-    .filter(model => isUnpricedModel(model));
+    .filter(model => isUnpricedModel(model, pricingData));
   if (unpricedModels.length) {
     warnings.push({
       type: 'unpriced-model-active',
@@ -525,7 +529,7 @@ function projectLabel(projectPath) {
   return parts.at(-1) || '';
 }
 
-export function buildBudgetWindows({ rows = [], budgetProfiles = [], nowMs = Date.now() } = {}) {
+export function buildBudgetWindows({ rows = [], budgetProfiles = [], nowMs = Date.now(), pricingData = null } = {}) {
   return budgetProfiles
     .filter(profile => profile && profile.enabled !== false)
     .map(profile => {
@@ -538,7 +542,7 @@ export function buildBudgetWindows({ rows = [], budgetProfiles = [], nowMs = Dat
         return timestampMs >= frame.startMs
           && timestampMs <= nowMs
           && (!source || budgetSourceMatches(row.source, source))
-          && modelMatchesGroup(row.model, modelGroup);
+          && modelMatchesGroup(row.model, modelGroup, pricingData);
       });
       const totals = sumRows(matching);
       const firstMs = frame.windowType === 'fixed'
@@ -642,7 +646,7 @@ export function liveGuardrailConfig(overrides: GuardrailOverrides = {}) {
   };
 }
 
-function normalizeSession(session) {
+function normalizeSession(session, pricingData) {
   const lastActivity = session.lastActivity || session.last_activity || null;
   const model = session.model || 'unknown';
   const inputTokens = number(session.inputTokens ?? session.input_tokens);
@@ -662,7 +666,7 @@ function normalizeSession(session) {
     cacheRead: cacheReadTokens,
     cacheWrite: cacheCreationTokens,
     reasoning: reasoningTokens
-  }, totalTokens, providerFromSource(session.source));
+  }, totalTokens, providerFromSource(session.source), pricingData);
   return {
     device: session.device || '',
     source: session.source || 'unknown',
@@ -681,13 +685,13 @@ function normalizeSession(session) {
   };
 }
 
-function calculateLiveCost(model, tokens, totalTokens, provider) {
+function calculateLiveCost(model, tokens, totalTokens, provider, pricingData) {
   const hasBreakdown = Object.values(tokens).some(value => number(value) > 0);
   const effectiveTokens = hasBreakdown ? tokens : { input: totalTokens };
-  return calculateOfficialCost(model, effectiveTokens, { provider }).totalUSD;
+  return calculateOfficialCost(model, effectiveTokens, { provider, pricingData }).totalUSD;
 }
 
-function normalizeEvent(event) {
+function normalizeEvent(event, pricingData) {
   const timestamp = event.timestamp || event.createdAt || event.created_at || null;
   const inputTokens = number(event.inputTokens ?? event.input_tokens);
   const outputTokens = number(event.outputTokens ?? event.output_tokens);
@@ -702,7 +706,7 @@ function normalizeEvent(event) {
       cacheRead: cacheReadTokens,
       cacheWrite: cacheCreationTokens,
       reasoning: reasoningTokens
-    }, { provider: providerFromSource(event.source) }).totalUSD;
+    }, { provider: providerFromSource(event.source), pricingData }).totalUSD;
   return {
     eventId: event.eventId || event.event_id || null,
     device: event.device || '',
@@ -762,10 +766,10 @@ function aggregate(rows, field) {
 }
 
 // 模型维度聚合:同一模型不同写法(点/横杠/API 名)按官方价条目归并,行键取组内按写法汇总 totalTokens 最大的原始写法
-function aggregateModels(rows) {
+function aggregateModels(rows, pricingData) {
   const byGroup = new Map();
   for (const row of rows) {
-    const group = resolveOfficialPricing(row.model)?.model || row.model || 'unknown';
+    const group = resolveOfficialPricing(row.model, null, pricingData)?.model || row.model || 'unknown';
     let target = byGroup.get(group);
     if (!target) {
       byGroup.set(group, { keySums: new Map(), sessions: new Set(), requests: 0, totalTokens: 0, costUSD: 0 });
@@ -915,10 +919,10 @@ function hardThresholdValue(value) {
   return Number.isFinite(number) && number >= 0.5 && number <= 2 ? number : 1;
 }
 
-function isUnpricedModel(model) {
+function isUnpricedModel(model, pricingData) {
   const value = String(model || '').trim();
   if (!value || value === 'unknown') return false;
-  const pricing = resolveOfficialPricing(value);
+  const pricing = resolveOfficialPricing(value, null, pricingData);
   return !pricing || !pricing.priced;
 }
 
@@ -950,14 +954,14 @@ function isMidModel(model) {
     || /kimi-k2[.-][67]/.test(value);
 }
 
-function modelMatchesGroup(model, modelGroup) {
+function modelMatchesGroup(model, modelGroup, pricingData) {
   const group = String(modelGroup || '').trim().toLowerCase();
   if (!group || group === 'all') return true;
   if (group === 'heavy') return isHeavyModel(model);
   if (group === 'light') return isLightModel(model);
   if (group === 'mid' || group === 'medium') return isMidModel(model) && !isHeavyModel(model);
-  if (group === 'priced') return !isUnpricedModel(model);
-  if (group === 'unpriced') return isUnpricedModel(model);
+  if (group === 'priced') return !isUnpricedModel(model, pricingData);
+  if (group === 'unpriced') return isUnpricedModel(model, pricingData);
   return String(model || '').toLowerCase().includes(group);
 }
 

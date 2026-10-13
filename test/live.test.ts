@@ -40,6 +40,54 @@ test('live snapshot uses recent token events for burn rate and cache hit', () =>
   assert.ok(snapshot.totals.cacheHitRate > 0);
 });
 
+test('live snapshot prices rows with supplied pricing data instead of the built-in table', () => {
+  const pricingData = {
+    models: [{
+      provider: 'Fixture Provider',
+      model: 'live-fixture-model',
+      aliases: ['live-fixture-model'],
+      priced: true,
+      ratesPerMTok: { input: 2, cachedInput: 0.2, cacheWrite5m: 2, cacheWrite1h: 2, output: 4 },
+      sourceProvider: 'Fixture Provider'
+    }]
+  };
+  const base = {
+    now: new Date('2026-06-17T02:15:00Z'),
+    windowMinutes: 15,
+    tokenEvents: [{
+      eventId: 'fx1',
+      device: 'demo',
+      source: 'Cursor',
+      sessionId: 's-fx',
+      timestamp: '2026-06-17T02:10:00Z',
+      model: 'live-fixture-model',
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000
+    }],
+    sessions: [{
+      device: 'demo',
+      source: 'Cursor',
+      sessionId: 's-fx',
+      lastActivity: '2026-06-17T02:12:00Z',
+      model: 'live-fixture-model',
+      inputTokens: 500_000,
+      outputTokens: 500_000,
+      totalTokens: 1_000_000,
+      costUSD: 0
+    }]
+  };
+  const priced = buildLiveSnapshot({ ...base, pricingData });
+  const builtin = buildLiveSnapshot(base);
+
+  assert.equal(priced.byModel[0].key, 'live-fixture-model');
+  assert.equal(priced.byModel[0].costUSD, 6);
+  assert.equal(priced.totals.costUSD, 6);
+  assert.equal(priced.activeSessions[0].costUSD, 3);
+  assert.ok(priced.warnings.every(warning => warning.type !== 'unpriced-model-active'));
+  assert.equal(builtin.byModel[0].costUSD, 0);
+  assert.ok(builtin.warnings.some(warning => warning.type === 'unpriced-model-active'));
+});
+
 test('live snapshot builds 24h pulse metrics from event-level rows', () => {
   const snapshot = buildLiveSnapshot({
     now: new Date('2026-06-17T12:00:00Z'),

@@ -608,7 +608,8 @@ async function handleApi(req, url, res) {
       collectionState,
       refreshIntervalSeconds: schedule.intervalSeconds,
       autoCollectEnabled: schedule.enabled,
-      demoMode: demoModeEnabled()
+      demoMode: demoModeEnabled(),
+      pricingData: await loadPricing(pricingCachePath)
     }));
     return;
   }
