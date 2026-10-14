@@ -67,6 +67,7 @@ test('collectors audit CLI emits safe summary without full paths', async () => {
     collectors: {
       ...Object.fromEntries(EXPERIMENTAL.map(id => [id, { roots: [join(root, id)] }])),
       deepseekHarness: { roots: [join(dir, 'no-deepseek-harness-data')] },
+      doubaowork: { roots: [join(dir, 'no-doubaowork-data')] },
       workbuddy: { tracesDir: '/nonexistent/workbuddy/traces' }
     }
   }), 'utf8');
@@ -77,7 +78,7 @@ test('collectors audit CLI emits safe summary without full paths', async () => {
     });
     assert.equal(result.code, 0, result.stderr);
     const json = JSON.parse(result.stdout);
-    assert.equal(json.collectors.length, EXPERIMENTAL.length + 1);
+    assert.equal(json.collectors.length, EXPERIMENTAL.length + 2);
     assert.equal(json.totals.usableTokenRecords, EXPERIMENTAL.length);
     assert.equal(json.totals.skippedNoTokenRecords, EXPERIMENTAL.length);
     assert.equal(json.totals.skippedConversationLikeRecords, 0);

@@ -1,17 +1,17 @@
 {
   "mode": "official-cache",
-  "verifiedAt": "2026-10-12",
-  "fetchedAt": "2026-10-12T23:36:43.268Z",
+  "verifiedAt": "2026-10-14",
+  "fetchedAt": "2026-10-14T01:48:45.584Z",
   "exchangeRate": {
     "base": "USD",
     "quote": "CNY",
-    "rate": 6.700304,
+    "rate": 6.705025,
     "source": "https://www.exchangerate-api.com",
     "sourceUrl": "https://open.er-api.com/v6/latest/USD",
-    "lastUpdated": "Mon, 12 Oct 2026 00:02:32 +0000",
-    "nextUpdated": "Tue, 13 Oct 2026 00:35:42 +0000",
-    "fetchedAt": "2026-10-12T23:36:43.270Z",
-    "fetchedAtMs": 1791848203270,
+    "lastUpdated": "Wed, 14 Oct 2026 00:02:32 +0000",
+    "nextUpdated": "Thu, 15 Oct 2026 00:06:22 +0000",
+    "fetchedAt": "2026-10-14T01:48:45.587Z",
+    "fetchedAtMs": 1791942525587,
     "isFallback": false,
     "cached": false
   },
@@ -21,7 +21,7 @@
       "label": "OpenAI API pricing",
       "url": "https://openai.com/api/pricing/",
       "note": "Standard API rates; Batch, Flex, Priority, long-context and data residency modifiers are not applied by default.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "http-error",
       "fetchError": null,
       "httpStatus": 403,
@@ -33,11 +33,11 @@
       "label": "OpenAI Codex pricing",
       "url": "https://developers.openai.com/codex/pricing",
       "note": "Codex ChatGPT-plan credits are documented separately; API-key mode uses OpenAI API pricing.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
-      "fetchStatus": "ok",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
+      "fetchStatus": "http-error",
       "fetchError": null,
-      "httpStatus": 200,
-      "contentLength": 699675,
+      "httpStatus": 403,
+      "contentLength": 7255,
       "assets": []
     },
     {
@@ -45,7 +45,7 @@
       "label": "OpenAI GPT-5.6 launch pricing",
       "url": "https://openai.com/index/gpt-5-6/",
       "note": "GPT-5.6 launch rates; cache write is 25% above input and cache read is 90% below input.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "http-error",
       "fetchError": null,
       "httpStatus": 403,
@@ -57,11 +57,11 @@
       "label": "OpenAI GPT-6 Astra pricing",
       "url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
       "note": "Standard API rates; long-context, Batch, Flex and Fast mode modifiers are not applied by default.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
-      "fetchStatus": "parse-error",
-      "fetchError": "no supported pricing rows found",
-      "httpStatus": 200,
-      "contentLength": 447687,
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
+      "fetchStatus": "http-error",
+      "fetchError": null,
+      "httpStatus": 403,
+      "contentLength": 7255,
       "assets": []
     },
     {
@@ -69,7 +69,7 @@
       "label": "OpenAI GPT-6 Sol and Luna launch pricing",
       "url": "https://openai.com/index/introducing-gpt-6-sol-and-luna/",
       "note": "GPT-6 Sol and Luna launch rates; cache write is 25% above input and cache read is 90% below input.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "http-error",
       "fetchError": null,
       "httpStatus": 403,
@@ -81,7 +81,7 @@
       "label": "OpenAI GPT-6.1 Sol launch pricing",
       "url": "https://openai.com/index/introducing-gpt-6-1-sol/",
       "note": "GPT-6.1 Sol launch rates; cache write is 25% above input and cache read is 95% below input.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "http-error",
       "fetchError": null,
       "httpStatus": 403,
@@ -93,20 +93,20 @@
       "label": "xAI model pricing",
       "url": "https://docs.x.ai/developers/models",
       "note": "xAI public model page lists input and output rates; no separate cached-input rate is applied by default.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "error",
-      "fetchError": "Cannot access 'XAI_MODEL_SPECS' before initialization"
+      "fetchError": "fetch failed"
     },
     {
       "provider": "anthropic",
       "label": "Claude API pricing",
       "url": "https://claude.com/pricing",
       "note": "First-party Claude API global standard pricing; cache write defaults to 5-minute prompt caching.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 1242021,
+      "contentLength": 1245183,
       "assets": []
     },
     {
@@ -114,11 +114,11 @@
       "label": "Claude Mythos 5.1 pricing",
       "url": "https://www.anthropic.com/claude/mythos",
       "note": "First-party Mythos 5.1 starting price; separate prompt-cache rates are not published.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 275537,
+      "contentLength": 275561,
       "assets": []
     },
     {
@@ -126,7 +126,7 @@
       "label": "DeepSeek Models & Pricing",
       "url": "https://api-docs.deepseek.com/quick_start/pricing",
       "note": "Overseas USD API prices per 1M tokens.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
@@ -138,11 +138,11 @@
       "label": "Xiaomi MiMo API pricing",
       "url": "https://platform.xiaomimimo.com/docs/en-US/price/pay-as-you-go",
       "note": "Overseas USD API prices per 1M tokens.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 145730,
+      "contentLength": 139470,
       "assets": []
     },
     {
@@ -150,17 +150,17 @@
       "label": "Z.ai / BigModel pricing",
       "url": "https://open.bigmodel.cn/pricing",
       "note": "Official BigModel pricing page. RMB prices are converted to USD for internal cost math.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 3906,
+      "contentLength": 5589,
       "assets": [
         {
-          "url": "https://static.bigmodel.cn/wd-paas-front/js/app.0fe2caa0.js",
+          "url": "https://static.bigmodel.cn/wd-paas-front/js/app.3026a2bc.js",
           "fetchStatus": "ok",
           "httpStatus": 200,
-          "contentLength": 1480370
+          "contentLength": 1359502
         }
       ]
     },
@@ -169,7 +169,7 @@
       "label": "Volcengine Ark pricing",
       "url": "https://www.volcengine.com/pricing?product=ark_bd&tab=1",
       "note": "Official Ark pricing page. RMB prices are converted to USD for internal cost math.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
@@ -188,12 +188,9 @@
       "label": "Gemini API pricing",
       "url": "https://ai.google.dev/gemini-api/docs/pricing",
       "note": "Gemini API USD prices per 1M tokens; Pro has separate short-context and long-context rates.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
-      "fetchStatus": "parse-error",
-      "fetchError": "no supported pricing rows found",
-      "httpStatus": 200,
-      "contentLength": 276030,
-      "assets": []
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
+      "fetchStatus": "error",
+      "fetchError": "fetch failed"
     },
     {
       "provider": "Kimi",
@@ -203,11 +200,11 @@
         "https://platform.kimi.com/docs/pricing/chat.md"
       ],
       "note": "Official Kimi API RMB prices converted to USD for internal cost math.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 283178,
+      "contentLength": 283413,
       "assets": [
         {
           "url": "https://platform.kimi.com/docs/pricing/chat.md",
@@ -222,11 +219,11 @@
       "label": "Alibaba Cloud Model Studio pricing",
       "url": "https://help.aliyun.com/zh/model-studio/billing-for-model-studio",
       "note": "Official Alibaba Cloud Model Studio RMB prices converted to USD for internal cost math; short-context public rates are used by default.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 1462097,
+      "contentLength": 1458857,
       "assets": []
     },
     {
@@ -234,11 +231,11 @@
       "label": "Tencent TokenHub model pricing",
       "url": "https://cloud.tencent.com/document/product/1823/130055",
       "note": "Tencent TokenHub RMB prices are converted to USD for internal cost math.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 2143723,
+      "contentLength": 2094863,
       "assets": []
     },
     {
@@ -249,11 +246,11 @@
         "https://platform.stepfun.com/docs/zh/guides/pricing/details.md"
       ],
       "note": "Official StepFun Open Platform RMB prices converted to USD for internal cost math.",
-      "fetchedAt": "2026-10-12T23:36:43.268Z",
+      "fetchedAt": "2026-10-14T01:48:45.584Z",
       "fetchStatus": "ok",
       "fetchError": null,
       "httpStatus": 200,
-      "contentLength": 835706,
+      "contentLength": 835938,
       "assets": [
         {
           "url": "https://platform.stepfun.com/docs/zh/guides/pricing/details.md",
@@ -1320,11 +1317,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.626837230071949,
-        "cachedInput": 0.626837230071949,
-        "cacheWrite5m": 0.626837230071949,
-        "cacheWrite1h": 0.626837230071949,
-        "output": 2.507348920287796
+        "input": 0.6263958747357392,
+        "cachedInput": 0.6263958747357392,
+        "cacheWrite5m": 0.6263958747357392,
+        "cacheWrite1h": 0.6263958747357392,
+        "output": 2.505583498942957
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1336,7 +1333,7 @@
           "cacheWrite5m": 4.2,
           "cacheWrite1h": 4.2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1485,11 +1482,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.14924695954094022,
-        "cachedInput": 0.037311739885235055,
-        "cacheWrite5m": 0.14924695954094022,
-        "cacheWrite1h": 0.14924695954094022,
-        "output": 0.5969878381637609
+        "input": 0.14914187493708078,
+        "cachedInput": 0.037285468734270195,
+        "cacheWrite5m": 0.14914187493708078,
+        "cacheWrite1h": 0.14914187493708078,
+        "output": 0.5965674997483231
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1501,7 +1498,7 @@
           "cacheWrite5m": 1,
           "cacheWrite1h": 1
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1521,11 +1518,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.8954817572456414,
-        "cachedInput": 0.04477408786228207,
-        "cacheWrite5m": 0.8954817572456414,
-        "cacheWrite1h": 0.8954817572456414,
-        "output": 2.686445271736924
+        "input": 0.8948512496224846,
+        "cachedInput": 0.04474256248112423,
+        "cacheWrite5m": 0.8948512496224846,
+        "cacheWrite1h": 0.8948512496224846,
+        "output": 2.684553748867454
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1537,7 +1534,7 @@
           "cacheWrite5m": 6,
           "cacheWrite1h": 6
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1554,11 +1551,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.1939756763275218,
-        "cachedInput": 0.29849391908188044,
-        "cacheWrite5m": 1.1939756763275218,
-        "cacheWrite1h": 1.1939756763275218,
-        "output": 4.178914867146326
+        "input": 1.1931349994966463,
+        "cachedInput": 0.29828374987416156,
+        "cacheWrite5m": 1.1931349994966463,
+        "cacheWrite1h": 1.1931349994966463,
+        "output": 4.175972498238262
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1570,7 +1567,7 @@
           "cacheWrite5m": 8,
           "cacheWrite1h": 8
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1587,11 +1584,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.1193975676327522,
-        "cachedInput": 0.03432680069441625,
-        "cacheWrite5m": 0.1193975676327522,
-        "cacheWrite1h": 0.1193975676327522,
-        "output": 0.4178914867146326
+        "input": 0.11931349994966463,
+        "cachedInput": 0.034302631235528576,
+        "cacheWrite5m": 0.11931349994966463,
+        "cacheWrite1h": 0.11931349994966463,
+        "output": 0.4175972498238261
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1603,7 +1600,7 @@
           "cacheWrite5m": 0.8,
           "cacheWrite1h": 0.8
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": [
@@ -1641,11 +1638,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.29849391908188044,
-        "cachedInput": 0.08507076693833593,
-        "cacheWrite5m": 0.29849391908188044,
-        "cacheWrite1h": 0.29849391908188044,
-        "output": 1.0447287167865815
+        "input": 0.29828374987416156,
+        "cachedInput": 0.08501086871413603,
+        "cacheWrite5m": 0.29828374987416156,
+        "cacheWrite1h": 0.29828374987416156,
+        "output": 1.0439931245595655
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1657,7 +1654,7 @@
           "cacheWrite5m": 2,
           "cacheWrite1h": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1674,11 +1671,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.1939756763275218,
-        "cachedInput": 0.29849391908188044,
-        "cacheWrite5m": 1.1939756763275218,
-        "cacheWrite1h": 1.1939756763275218,
-        "output": 4.178914867146326
+        "input": 1.1931349994966463,
+        "cachedInput": 0.29828374987416156,
+        "cacheWrite5m": 1.1931349994966463,
+        "cacheWrite1h": 1.1931349994966463,
+        "output": 4.175972498238262
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1690,7 +1687,7 @@
           "cacheWrite5m": 8,
           "cacheWrite1h": 8
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1707,11 +1704,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.8954817572456414,
-        "cachedInput": 0.19402104740322232,
-        "cacheWrite5m": 0.8954817572456414,
-        "cacheWrite1h": 0.8954817572456414,
-        "output": 3.5819270289825655
+        "input": 0.8948512496224846,
+        "cachedInput": 0.19388443741820502,
+        "cacheWrite5m": 0.8948512496224846,
+        "cacheWrite1h": 0.8948512496224846,
+        "output": 3.5794049984899385
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1723,7 +1720,7 @@
           "cacheWrite5m": 6,
           "cacheWrite1h": 6
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1740,11 +1737,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.1193975676327522,
-        "cachedInput": 0.023879513526550437,
-        "cacheWrite5m": 0.1193975676327522,
-        "cacheWrite1h": 0.1193975676327522,
-        "output": 0.29849391908188044
+        "input": 0.11931349994966463,
+        "cachedInput": 0.023862699989932925,
+        "cacheWrite5m": 0.11931349994966463,
+        "cacheWrite1h": 0.11931349994966463,
+        "output": 0.29828374987416156
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1756,7 +1753,7 @@
           "cacheWrite5m": 0.8,
           "cacheWrite1h": 0.8
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1773,11 +1770,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.29849391908188044,
-        "cachedInput": 0.0596987838163761,
-        "cacheWrite5m": 0.29849391908188044,
-        "cacheWrite1h": 0.29849391908188044,
-        "output": 1.1939756763275218
+        "input": 0.29828374987416156,
+        "cachedInput": 0.059656749974832314,
+        "cacheWrite5m": 0.29828374987416156,
+        "cacheWrite1h": 0.29828374987416156,
+        "output": 1.1931349994966463
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1789,7 +1786,7 @@
           "cacheWrite5m": 2,
           "cacheWrite1h": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1806,11 +1803,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.5969878381637609,
-        "cachedInput": 0.14924695954094022,
-        "cacheWrite5m": 0.5969878381637609,
-        "cacheWrite1h": 0.5969878381637609,
-        "output": 2.686445271736924
+        "input": 0.5965674997483231,
+        "cachedInput": 0.14914187493708078,
+        "cacheWrite5m": 0.5965674997483231,
+        "cacheWrite1h": 0.5965674997483231,
+        "output": 2.684553748867454
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1822,7 +1819,7 @@
           "cacheWrite5m": 4,
           "cacheWrite1h": 4
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1839,11 +1836,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.7462347977047011,
-        "cachedInput": 0.17909635144912828,
-        "cacheWrite5m": 0.7462347977047011,
-        "cacheWrite1h": 0.7462347977047011,
-        "output": 3.283433109900685
+        "input": 0.7457093746854039,
+        "cachedInput": 0.17897024992449692,
+        "cacheWrite5m": 0.7457093746854039,
+        "cacheWrite1h": 0.7457093746854039,
+        "output": 3.281121248615777
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1855,7 +1852,7 @@
           "cacheWrite5m": 5,
           "cacheWrite1h": 5
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1873,11 +1870,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.7462347977047011,
-        "cachedInput": 0.17909635144912828,
-        "cacheWrite5m": 0.7462347977047011,
-        "cacheWrite1h": 0.7462347977047011,
-        "output": 3.283433109900685
+        "input": 0.7457093746854039,
+        "cachedInput": 0.17897024992449692,
+        "cacheWrite5m": 0.7457093746854039,
+        "cacheWrite1h": 0.7457093746854039,
+        "output": 3.281121248615777
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1889,7 +1886,7 @@
           "cacheWrite5m": 5,
           "cacheWrite1h": 5
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1906,11 +1903,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.14924695954094022,
-        "cachedInput": 0.02984939190818805,
-        "cacheWrite5m": 0.14924695954094022,
-        "cacheWrite1h": 0.14924695954094022,
-        "output": 0.4477408786228207
+        "input": 0.14914187493708078,
+        "cachedInput": 0.029828374987416157,
+        "cacheWrite5m": 0.14914187493708078,
+        "cacheWrite1h": 0.14914187493708078,
+        "output": 0.4474256248112423
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1922,7 +1919,7 @@
           "cacheWrite5m": 1,
           "cacheWrite1h": 1
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1939,11 +1936,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.022387043931141035,
-        "cachedInput": 0.004477408786228207,
-        "cacheWrite5m": 0.022387043931141035,
-        "cacheWrite1h": 0.022387043931141035,
-        "output": 0.22387043931141035
+        "input": 0.022371281240562115,
+        "cachedInput": 0.004474256248112423,
+        "cacheWrite5m": 0.022371281240562115,
+        "cacheWrite1h": 0.022371281240562115,
+        "output": 0.22371281240562116
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -1955,7 +1952,7 @@
           "cacheWrite5m": 0.15,
           "cacheWrite1h": 0.15
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -1988,7 +1985,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2005,11 +2002,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.29849391908188044,
-        "cachedInput": 0.0596987838163761,
-        "cacheWrite5m": 0.29849391908188044,
-        "cacheWrite1h": 0.29849391908188044,
-        "output": 0.8954817572456414
+        "input": 0.29828374987416156,
+        "cachedInput": 0.059656749974832314,
+        "cacheWrite5m": 0.29828374987416156,
+        "cacheWrite1h": 0.29828374987416156,
+        "output": 0.8948512496224846
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2021,7 +2018,7 @@
           "cacheWrite5m": 2,
           "cacheWrite1h": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2039,11 +2036,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.8954817572456414,
-        "cachedInput": 0.17909635144912828,
+        "input": 0.8948512496224846,
+        "cachedInput": 0.17897024992449692,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 4.477408786228207
+        "output": 4.4742562481124235
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2055,7 +2052,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2073,11 +2070,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.8954817572456414,
-        "cachedInput": 0.17909635144912828,
+        "input": 0.8948512496224846,
+        "cachedInput": 0.17897024992449692,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 4.477408786228207
+        "output": 4.4742562481124235
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2089,7 +2086,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2107,11 +2104,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.4477408786228207,
-        "cachedInput": 0.08954817572456414,
+        "input": 0.4474256248112423,
+        "cachedInput": 0.08948512496224846,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 2.2387043931141033
+        "output": 2.2371281240562118
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2123,12 +2120,46 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
       "sourceProvider": "DoubaoSeed",
       "pricingFetchStatus": "official-api",
+      "note": "Official Volcengine Ark CNY online-inference rate converted to USD at the last verified refresh rate. Cache-storage charges are not included."
+    },
+    {
+      "provider": "DoubaoSeed",
+      "model": "doubao-seed-2.1-lite",
+      "aliases": [
+        "doubao-seed-2-1-lite",
+        "doubao_seed_2_1_lite"
+      ],
+      "priced": true,
+      "unavailableReason": null,
+      "ratesPerMTok": {
+        "input": 0.11931349994966463,
+        "output": 0.40268306233011814,
+        "cachedInput": 0.023862699989932925,
+        "cacheWrite5m": 0,
+        "cacheWrite1h": 0
+      },
+      "officialRatesPerMTok": {
+        "currency": "CNY",
+        "unit": "1M tokens",
+        "ratesPerMTok": {
+          "input": 0.8,
+          "output": 2.7,
+          "cachedInput": 0.16,
+          "cacheWrite5m": 0,
+          "cacheWrite1h": 0
+        },
+        "exchangeRate": 6.705025,
+        "sourceUnit": "元 / 1M tokens"
+      },
+      "rateSchedule": null,
+      "sourceProvider": "DoubaoSeed",
+      "pricingFetchStatus": "cached-official-cny",
       "note": "Official Volcengine Ark CNY online-inference rate converted to USD at the last verified refresh rate. Cache-storage charges are not included."
     },
     {
@@ -2145,9 +2176,9 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.4477408786228207,
-        "output": 2.2387043931141033,
-        "cachedInput": 0.08954817572456414,
+        "input": 0.4474256248112423,
+        "output": 2.2371281240562118,
+        "cachedInput": 0.08948512496224846,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0
       },
@@ -2161,7 +2192,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2179,11 +2210,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.08954817572456414,
-        "cachedInput": 0.01790963514491283,
+        "input": 0.08948512496224846,
+        "cachedInput": 0.017897024992449693,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 0.5372890543473848
+        "output": 0.5369107497734907
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2195,7 +2226,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2213,11 +2244,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.4775902705310088,
-        "cachedInput": 0.09551805410620175,
+        "input": 0.4772539997986585,
+        "cachedInput": 0.0954507999597317,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 2.3879513526550435
+        "output": 2.3862699989932925
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2229,7 +2260,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2247,11 +2278,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.4775902705310088,
-        "cachedInput": 0.09551805410620175,
+        "input": 0.4772539997986585,
+        "cachedInput": 0.0954507999597317,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 2.3879513526550435
+        "output": 2.3862699989932925
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2263,7 +2294,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2281,11 +2312,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.02984939190818805,
-        "cachedInput": 0.005969878381637609,
+        "input": 0.029828374987416157,
+        "cachedInput": 0.005965674997483231,
         "cacheWrite5m": 0,
         "cacheWrite1h": 0,
-        "output": 0.29849391908188044
+        "output": 0.29828374987416156
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2297,7 +2328,7 @@
           "cacheWrite5m": 0,
           "cacheWrite1h": 0
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2718,11 +2749,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 5.969878381637609,
-        "cachedInput": 2.9849391908188045,
-        "cacheWrite5m": 5.969878381637609,
-        "cacheWrite1h": 5.969878381637609,
-        "output": 0.29849391908188044
+        "input": 5.965674997483231,
+        "cachedInput": 2.9828374987416155,
+        "cacheWrite5m": 5.965674997483231,
+        "cacheWrite1h": 5.965674997483231,
+        "output": 0.29828374987416156
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2734,7 +2765,7 @@
           "cacheWrite1h": 40,
           "output": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2751,11 +2782,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.9701052370161115,
-        "cachedInput": 0.19402104740322232,
-        "cacheWrite5m": 0.9701052370161115,
-        "cacheWrite1h": 0.9701052370161115,
-        "output": 4.029667907605386
+        "input": 0.969422187091025,
+        "cachedInput": 0.19388443741820502,
+        "cacheWrite5m": 0.969422187091025,
+        "cacheWrite1h": 0.969422187091025,
+        "output": 4.026830623301181
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2767,7 +2798,7 @@
           "cacheWrite1h": 6.5,
           "output": 27
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2784,11 +2815,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.940210474032223,
-        "cachedInput": 0.38804209480644464,
-        "cacheWrite5m": 1.940210474032223,
-        "cacheWrite1h": 1.940210474032223,
-        "output": 8.059335815210773
+        "input": 1.93884437418205,
+        "cachedInput": 0.38776887483641004,
+        "cacheWrite5m": 1.93884437418205,
+        "cacheWrite1h": 1.93884437418205,
+        "output": 8.053661246602362
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2800,7 +2831,7 @@
           "cacheWrite1h": 13,
           "output": 54
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2817,11 +2848,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.9701052370161115,
-        "cachedInput": 0.16417165549503426,
-        "cacheWrite5m": 0.9701052370161115,
-        "cacheWrite1h": 0.9701052370161115,
-        "output": 4.029667907605386
+        "input": 0.969422187091025,
+        "cachedInput": 0.16405606243078885,
+        "cacheWrite5m": 0.969422187091025,
+        "cacheWrite1h": 0.969422187091025,
+        "output": 4.026830623301181
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2833,7 +2864,7 @@
           "cacheWrite1h": 6.5,
           "output": 27
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2850,11 +2881,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.5969878381637609,
-        "output": 3.134186150359745,
-        "cachedInput": 0.10447287167865815,
-        "cacheWrite5m": 0.5969878381637609,
-        "cacheWrite1h": 0.5969878381637609
+        "input": 0.5965674997483231,
+        "output": 3.1319793736786963,
+        "cachedInput": 0.10439931245595653,
+        "cacheWrite5m": 0.5965674997483231,
+        "cacheWrite1h": 0.5965674997483231
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2866,7 +2897,7 @@
           "cacheWrite1h": 4,
           "output": 21
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2884,11 +2915,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.7909635144912828,
-        "cachedInput": 1.7909635144912828,
-        "cacheWrite5m": 1.7909635144912828,
-        "cacheWrite1h": 1.7909635144912828,
-        "output": 5.372890543473848
+        "input": 1.7897024992449693,
+        "cachedInput": 1.7897024992449693,
+        "cacheWrite5m": 1.7897024992449693,
+        "cacheWrite1h": 1.7897024992449693,
+        "output": 5.369107497734908
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2900,7 +2931,7 @@
           "cacheWrite5m": 12,
           "cacheWrite1h": 12
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2917,11 +2948,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.1193975676327522,
-        "cachedInput": 0.1193975676327522,
-        "cacheWrite5m": 0.1193975676327522,
-        "cacheWrite1h": 0.1193975676327522,
-        "output": 0.40296679076053865
+        "input": 0.11931349994966463,
+        "cachedInput": 0.11931349994966463,
+        "cacheWrite5m": 0.11931349994966463,
+        "cacheWrite1h": 0.11931349994966463,
+        "output": 0.40268306233011814
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2933,7 +2964,7 @@
           "cacheWrite5m": 0.8,
           "cacheWrite1h": 0.8
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2950,11 +2981,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.29849391908188044,
-        "cachedInput": 0.29849391908188044,
-        "cacheWrite5m": 0.29849391908188044,
-        "cacheWrite1h": 0.29849391908188044,
-        "output": 1.1939756763275218
+        "input": 0.29828374987416156,
+        "cachedInput": 0.29828374987416156,
+        "cacheWrite5m": 0.29828374987416156,
+        "cacheWrite1h": 0.29828374987416156,
+        "output": 1.1931349994966463
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2966,7 +2997,7 @@
           "cacheWrite5m": 2,
           "cacheWrite1h": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -2983,11 +3014,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.7909635144912828,
-        "cachedInput": 1.7909635144912828,
-        "cacheWrite5m": 1.7909635144912828,
-        "cacheWrite1h": 1.7909635144912828,
-        "output": 5.372890543473848
+        "input": 1.7897024992449693,
+        "cachedInput": 1.7897024992449693,
+        "cacheWrite5m": 1.7897024992449693,
+        "cacheWrite1h": 1.7897024992449693,
+        "output": 5.369107497734908
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -2999,7 +3030,7 @@
           "cacheWrite5m": 12,
           "cacheWrite1h": 12
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3016,11 +3047,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.17909635144912828,
-        "cachedInput": 0.17909635144912828,
-        "cacheWrite5m": 0.17909635144912828,
-        "cacheWrite1h": 0.17909635144912828,
-        "output": 1.0745781086947697
+        "input": 0.17897024992449692,
+        "cachedInput": 0.17897024992449692,
+        "cacheWrite5m": 0.17897024992449692,
+        "cacheWrite1h": 0.17897024992449692,
+        "output": 1.0738214995469815
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3032,7 +3063,7 @@
           "cacheWrite5m": 1.2,
           "cacheWrite1h": 1.2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3050,11 +3081,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.5969878381637609,
-        "output": 2.3879513526550435,
-        "cachedInput": 0.5969878381637609,
-        "cacheWrite5m": 0.5969878381637609,
-        "cacheWrite1h": 0.5969878381637609
+        "input": 0.5965674997483231,
+        "output": 2.3862699989932925,
+        "cachedInput": 0.5965674997483231,
+        "cacheWrite5m": 0.5965674997483231,
+        "cacheWrite1h": 0.5965674997483231
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3066,7 +3097,7 @@
           "cacheWrite5m": 4,
           "cacheWrite1h": 4
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3083,11 +3114,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.14924695954094022,
-        "cachedInput": 0.14924695954094022,
-        "cacheWrite5m": 0.14924695954094022,
-        "cacheWrite1h": 0.14924695954094022,
-        "output": 0.5969878381637609
+        "input": 0.14914187493708078,
+        "cachedInput": 0.14914187493708078,
+        "cacheWrite5m": 0.14914187493708078,
+        "cacheWrite1h": 0.14914187493708078,
+        "output": 0.5965674997483231
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3099,7 +3130,7 @@
           "cacheWrite5m": 1,
           "cacheWrite1h": 1
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3116,11 +3147,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.5223643583932908,
-        "output": 1.0447287167865815,
-        "cachedInput": 0.5223643583932908,
-        "cacheWrite5m": 0.5223643583932908,
-        "cacheWrite1h": 0.5223643583932908
+        "input": 0.5219965622797827,
+        "output": 1.0439931245595655,
+        "cachedInput": 0.5219965622797827,
+        "cacheWrite5m": 0.5219965622797827,
+        "cacheWrite1h": 0.5219965622797827
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3132,7 +3163,7 @@
           "cacheWrite5m": 3.5,
           "cacheWrite1h": 3.5
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3149,11 +3180,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 0.29849391908188044,
-        "output": 0.8954817572456414,
-        "cachedInput": 0.29849391908188044,
-        "cacheWrite5m": 0.29849391908188044,
-        "cacheWrite1h": 0.29849391908188044
+        "input": 0.29828374987416156,
+        "output": 0.8948512496224846,
+        "cachedInput": 0.29828374987416156,
+        "cacheWrite5m": 0.29828374987416156,
+        "cacheWrite1h": 0.29828374987416156
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3165,7 +3196,7 @@
           "cacheWrite5m": 2,
           "cacheWrite1h": 2
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,
@@ -3204,11 +3235,11 @@
       "priced": true,
       "unavailableReason": null,
       "ratesPerMTok": {
-        "input": 1.0447287167865815,
-        "output": 2.9849391908188045,
-        "cachedInput": 0.052236435839329076,
-        "cacheWrite5m": 1.0447287167865815,
-        "cacheWrite1h": 1.0447287167865815
+        "input": 1.0439931245595655,
+        "output": 2.9828374987416155,
+        "cachedInput": 0.052199656227978265,
+        "cacheWrite5m": 1.0439931245595655,
+        "cacheWrite1h": 1.0439931245595655
       },
       "officialRatesPerMTok": {
         "currency": "CNY",
@@ -3220,7 +3251,7 @@
           "cacheWrite5m": 7,
           "cacheWrite1h": 7
         },
-        "exchangeRate": 6.700304,
+        "exchangeRate": 6.705025,
         "sourceUnit": "元 / 1M tokens"
       },
       "rateSchedule": null,

@@ -321,10 +321,13 @@ export function buildStructuredUsageOutput(clientKey, events, pricingData) {
         workspace,
         workspaceLabel: workspace,
         model: event.model,
-        tokens: zero()
+        tokens: zero(),
+        cost: 0
       });
     }
-    add(workspaceMap.get(workspaceKey).tokens, event.tokens);
+    const workspaceRow = workspaceMap.get(workspaceKey);
+    workspaceRow.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
+    add(workspaceRow.tokens, event.tokens);
   }
 
   const byDate = new Map();
@@ -351,7 +354,7 @@ export function buildStructuredUsageOutput(clientKey, events, pricingData) {
     workspaceLabel: row.workspaceLabel,
     model: row.model,
     ...toTokenPayload(row.tokens),
-    cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData)
+    cost: row.cost
   }));
 
   const tokenEvents = events.map(event => ({

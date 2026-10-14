@@ -127,7 +127,7 @@ export async function collect(pricingData = null) {
       cacheWrite: pos(row.cache_write_tokens),
       reasoning:  pos(row.reasoning_tokens)
     };
-    const calculatedCost = calculateCost(model, tokens, pricingData, provider);
+    const calculatedCost = calculateCost(model, tokens, pricingData, provider, date);
     const cost = calculatedCost;
     const sessId   = String(row.id || 'unknown');
 

@@ -246,6 +246,14 @@ function parseTraceFile(traceJson, sessionMap, dbSessionMap, audit, inheritedTra
   const resolvedTraceModel = traceModel(trace);
   const spans = Array.isArray(traceJson.spans) ? traceJson.spans : [];
 
+  // terminalTitleGenerator 是应用自带的标题生成 agent,内部事务调用而非用户用量,
+  // 直接子生成 span 不计事件,与调用所用模型名无关。
+  const internalAgentSpanIds = new Set(spans
+    .filter(span => span?.type === 'agent'
+      && /titlegenerator/i.test(String(span.agentName || span.name || '')))
+    .map(span => span.spanId)
+    .filter(Boolean));
+
   // PID session metadata is transient. The trace ID remains available after
   // WorkBuddy removes that file, so use it for stable storage identity.
   const sessionInfo = workerPid ? sessionMap.get(workerPid) : null;
@@ -268,6 +276,7 @@ function parseTraceFile(traceJson, sessionMap, dbSessionMap, audit, inheritedTra
   for (let spanIndex = 0; spanIndex < spans.length; spanIndex++) {
     const span = spans[spanIndex];
     if (!span || span.type !== 'generation') continue;
+    if (span.parentId && internalAgentSpanIds.has(span.parentId)) continue;
 
     const spanTimestamp = span.startedAt || traceTimestamp;
     if (!span.toolOutput || typeof span.toolOutput !== 'string') continue;
@@ -667,7 +676,7 @@ function buildOutput(events, pricingData, auditSummary) {
     }
     const daily = dailyMap.get(dailyKey);
     addInto(daily, event.tokens);
-    daily.cost += calculateCost(event.model, event.tokens, pricingData);
+    daily.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
 
     const sessionKey = event.sessionId;
     if (!sessionMap.has(sessionKey)) {
@@ -683,7 +692,7 @@ function buildOutput(events, pricingData, auditSummary) {
     }
     const sess = sessionMap.get(sessionKey);
     addInto(sess, event.tokens);
-    sess.cost += calculateCost(event.model, event.tokens, pricingData);
+    sess.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
     if (event.timestamp > (sess.lastActivity || '')) {
       sess.lastActivity = event.timestamp;
       sess.model = event.model;

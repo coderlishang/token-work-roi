@@ -340,7 +340,7 @@ export async function collect(pricingData = null) {
 
   function accumulate(events) {
     for (const { sessionId, agentPath, date, model, provider, tokens } of events) {
-      const calculatedCost = calculateCost(model, tokens, pricingData, provider);
+      const calculatedCost = calculateCost(model, tokens, pricingData, provider, date);
       const effectiveCost = calculatedCost;
 
       // Daily

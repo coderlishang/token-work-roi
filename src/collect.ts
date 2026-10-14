@@ -358,7 +358,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
       type: 'data', device, source: label, sourceSummary, label, module,
       dailyRows, sessionRows, eventRows, reconciliation,
       // Buddy project/log records may rotate; merge their stable event IDs.
-      incremental: incrementalRefresh || id === 'codebuddy' || id === 'workbuddy'
+      incremental: incrementalRefresh || id === 'codebuddy' || id === 'workbuddy' || id === 'doubaowork'
     });
   }
 
@@ -1421,7 +1421,7 @@ function mergeHistoricalEventUsage(db, payload, pricingData) {
   for (const source of sources) {
     // Delta 计费采集器的 daily/session 必须由全部存储事件重建，不能只用本次增量。
     if (payload.sourceSummary.id === 'deepseek-harness'
-      || (payload.incremental && ['codex', 'workbuddy', 'codebuddy'].includes(payload.sourceSummary.id))) {
+      || (payload.incremental && ['codex', 'workbuddy', 'codebuddy', 'doubaowork'].includes(payload.sourceSummary.id))) {
       rebuildIncrementalEventUsage(db, payload, source, pricingData);
       continue;
     }
@@ -1506,6 +1506,24 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
     ...payload.dailyRows.filter(row => row.source !== source),
     ...days.values()
   ];
+  // 事件改判模型会留下旧 (日期,模型) 日行,落库前清掉重建结果之外的键。
+  const recomputedDailyKeys = new Set([...days.values()]
+    .map(row => `${row.usageDate} ${row.model}`));
+  const staleDailyRows = db.prepare(`
+    SELECT usage_date AS usageDate, model
+    FROM daily_usage
+    WHERE device = ? AND source = ?
+  `).all(payload.device, source)
+    .filter(row => !recomputedDailyKeys.has(`${row.usageDate} ${row.model}`));
+  if (staleDailyRows.length) {
+    const deleteStaleDaily = db.prepare(`
+      DELETE FROM daily_usage
+      WHERE device = ? AND source = ? AND usage_date = ? AND model = ?
+    `);
+    for (const row of staleDailyRows) {
+      deleteStaleDaily.run(payload.device, source, row.usageDate, row.model);
+    }
+  }
   payload.sessionRows = [
     ...payload.sessionRows.filter(row => row.source !== source),
     ...sessions.values()

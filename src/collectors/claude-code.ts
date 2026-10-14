@@ -453,7 +453,7 @@ function aggregateRecord(record, dailyMap, sessionMap, pricingData) {
   const date = localDateFromTimestamp(record.timestamp);
   const model = normalizeModelForGrouping(record.model, recordDate(record));
   const tokens = record.tokens || extractTokens(record.usage);
-  const costUSD = calculateCost(model, tokens, pricingData);
+  const costUSD = calculateCost(model, tokens, pricingData, null, date);
 
   // --- daily ---
   const dk = `${date}::${model}`;

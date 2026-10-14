@@ -768,3 +768,36 @@ test('WorkBuddy fixture data contains no conversation content', () => {
   assert.equal(/"diff"\s*:/.test(text), false, 'fixture contains diff field');
   assert.equal(/"transcript"\s*:/.test(text), false, 'fixture contains transcript field');
 });
+
+test('WorkBuddy skips terminalTitleGenerator child spans regardless of model', async () => {
+  const baseDir = mkdtempSync(join(tmpdir(), 'token-work-wb-title-'));
+  const { dir, configPath } = makeConfig(join(baseDir, 'traces'), join(baseDir, 'sessions'));
+  makeTraceFile(join(baseDir, 'traces'), 72118, 'trace_title', [
+    {
+      traceId: 'trace_title',
+      spanId: 'span_agent',
+      parentId: null,
+      name: 'terminalTitleGenerator',
+      type: 'agent',
+      agentName: 'terminalTitleGenerator',
+      startedAt: '2026-06-17T02:06:00Z',
+      status: 'ok'
+    },
+    makeGenerationSpan('span_title', 'span_agent', 'wb-lite', { prompt_tokens: 1, completion_tokens: 14 }),
+    makeGenerationSpan('span_gen', null, 'glm-5.2', { prompt_tokens: 100, completion_tokens: 20 })
+  ]);
+
+  process.env.TOKEN_WORK_CONFIG = configPath;
+  resetConfigCache();
+  try {
+    const result = await collect();
+    // 标题生成是应用自身的事务性调用,不是用户用量,不产生事件。
+    assert.equal(result.tokenEvents.length, 1);
+    assert.equal(result.tokenEvents[0].model, 'glm-5.2');
+    assert.equal(result.audit.usableTokenRecords, 1);
+  } finally {
+    delete process.env.TOKEN_WORK_CONFIG;
+    rmSync(baseDir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
