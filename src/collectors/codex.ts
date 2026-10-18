@@ -450,7 +450,10 @@ function collectFromSessionFiles(sessionFiles, pricingData, metadataSourcePrefix
       // Daily
       const dk = `${date}::${source}::${model}`;
       if (!dailyMap.has(dk)) dailyMap.set(dk, { date, source, model, ...zero(), cost: 0 });
-      addInto(dailyMap.get(dk), tokens);
+      const eventCost = calculateCost(model, tokens, pricingData, null, date);
+      const dayAgg = dailyMap.get(dk);
+      addInto(dayAgg, tokens);
+      dayAgg.cost += eventCost;
 
       // True rollout session
       const sessionKey = `${source}::${sessionId}`;
@@ -462,11 +465,13 @@ function collectFromSessionFiles(sessionFiles, pricingData, metadataSourcePrefix
           workspaceLabel: decodeWorkspace(workspaceKey),
           model,
           ...zero(),
+          cost: 0,
           lastActivity: timestamp || null
         });
       }
       const sessionAgg = sessionMap.get(sessionKey);
       addInto(sessionAgg, tokens);
+      sessionAgg.cost += eventCost;
       if (timestamp && (!sessionAgg.lastActivity || timestamp > sessionAgg.lastActivity)) {
         sessionAgg.lastActivity = timestamp;
       }
@@ -804,7 +809,7 @@ function buildOutput(dailyMap, sessionMap, tokenEvents, pricingData) {
           client:  row.source,
           modelId: row.model,
           tokens,
-          cost: calculateCost(row.model, tokens, pricingData),
+          cost: row.cost,
         };
       })
     }));
@@ -825,7 +830,7 @@ function buildOutput(dailyMap, sessionMap, tokenEvents, pricingData) {
       lastActivity:    wm.lastActivity,
       model:          wm.model,
       ...tokens,
-      cost: calculateCost(wm.model, tokens, pricingData),
+      cost: wm.cost,
     };
   });
 

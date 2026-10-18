@@ -1796,7 +1796,8 @@ test('collect apply writes temp SQLite with backup and before/after counts', asy
         SET last_activity = '2026-07-19T12:00:00.000Z', cost_usd = 999
         WHERE source = 'Cursor'
       `).run();
-      afterMigration.prepare('UPDATE daily_usage SET cost_usd = 999').run();
+      // gpt-5.4-mini 未定价，成本修复会跳过；只污染会回写的行
+      afterMigration.prepare("UPDATE daily_usage SET cost_usd = 999 WHERE model != 'gpt-5.4-mini'").run();
     } finally {
       afterMigration.close();
     }
@@ -1820,10 +1821,18 @@ test('collect apply writes temp SQLite with backup and before/after counts', asy
     const refreshed = JSON.parse(unchanged.stdout);
     assert.ok(refreshed.backup?.path, unchanged.stderr);
     assert.equal(existsSync(refreshed.backup.path), true);
+    // 污染的 cost_usd 触发成本修复，走 protectedMutation 的 repair 备份（不受 24h 限流）
     assert.equal(
-      readdirSync(backupDir).filter(name => name.endsWith('-scheduled-collect.sqlite')).length,
+      readdirSync(backupDir).filter(name => name.endsWith('-scheduled-collect-repair.sqlite')).length,
       1
     );
+    const afterRepair = new DatabaseSync(fixture.dbPath);
+    try {
+      assert.equal(afterRepair.prepare('SELECT COUNT(*) AS count FROM daily_usage WHERE cost_usd = 999').get().count, 0);
+      assert.equal(afterRepair.prepare('SELECT COUNT(*) AS count FROM session_usage WHERE cost_usd = 999').get().count, 0);
+    } finally {
+      afterRepair.close();
+    }
   } finally {
     cleanupFixture(fixture);
   }
@@ -2495,6 +2504,142 @@ test('collect rebuilds DeepSeek Harness daily and session totals from every stor
     cleanupFixture(fixture);
   }
 });
+
+test('collect rebuilds ZCode daily and session totals from every stored event', async () => {
+  const fixture = createZcodeFixture();
+  const args = ['src/collect.ts', '--sources=zcode', '--db', fixture.dbPath, '--apply', '--yes', '--json'];
+  const incremental = { ...fixture.env, TOKEN_WORK_COLLECT_REASON: 'scheduled', TOKEN_WORK_SCHEDULED_INCREMENTAL: '1' };
+  try {
+    const first = await runNode(args, fixture.env);
+    assert.equal(first.code, 0, first.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 1, b: 1 });
+
+    // 历史遗留行：按工作区归并时期写入的会话行没有工作区，下一次采集须按 CLI 会话表补回
+    const legacy = new DatabaseSync(fixture.dbPath);
+    legacy.prepare(`UPDATE session_usage SET project_path = NULL WHERE source = 'ZCode' AND session_id = 'sess_b'`).run();
+    legacy.close();
+
+    // 会话续接追加请求：增量只读变更文件，会话行仍须等于全部事件之和
+    writeFileSync(fixture.rolloutA, [zcodeLine('req-1', 'sess_a'), zcodeLine('req-2', 'sess_a')].join('\n'));
+    markStale(fixture.rolloutB);
+    const second = await runNode(args, incremental);
+    assert.equal(second.code, 0, second.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 1 });
+
+    // 换成另一个会话变更：未变更会话的会话行不得被工作区聚合行取代
+    writeFileSync(fixture.rolloutB, [zcodeLine('req-1', 'sess_b'), zcodeLine('req-2', 'sess_b')].join('\n'));
+    markStale(fixture.rolloutA);
+    const third = await runNode(args, incremental);
+    assert.equal(third.code, 0, third.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 });
+
+    // 无变更的增量采集：会话行保持不变
+    const fourth = await runNode(args, incremental);
+    assert.equal(fourth.code, 0, fourth.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 });
+
+    // 无事件的遗留会话行须清理，但带用户批注的行保留：会话列表按会话行左连接批注，删行会让批注从界面消失
+    const ghost = new DatabaseSync(fixture.dbPath);
+    const device = ghost.prepare(`SELECT device FROM session_usage LIMIT 1`).get().device;
+    const insertGhost = ghost.prepare(`
+      INSERT INTO session_usage (device, source, session_id, model, project_path, updated_at)
+      VALUES (?, 'ZCode', ?, 'glm-5.3', 'project-g', datetime('now'))
+    `);
+    insertGhost.run(device, 'sess_ghost_plain');
+    insertGhost.run(device, 'sess_ghost_annotated');
+    ghost.prepare(`
+      INSERT INTO session_annotations (device, source, session_id, project_alias)
+      VALUES (?, 'ZCode', 'sess_ghost_annotated', 'project-g')
+    `).run(device);
+    ghost.close();
+
+    const fifth = await runNode(args, incremental);
+    assert.equal(fifth.code, 0, fifth.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 }, ['sess_ghost_annotated']);
+  } finally {
+    cleanupFixture(fixture);
+  }
+});
+
+// 增量扫描按 mtime 过滤，把文件时间戳推到上次采集之前即模拟未变更文件
+function markStale(filePath: string) {
+  const stale = new Date(Date.now() - 120_000);
+  utimesSync(filePath, stale, stale);
+}
+
+// 按工作区归并会话行会留下与 token_events 对不上的行，重复计入总量
+function assertZcodeTotals(dbPath: string, eventCounts: { a: number; b: number }, extraSessions: string[] = []) {
+  const perEvent = 10523 + 372 + 128704;
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const eventTotal = db.prepare(`
+      SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS total
+      FROM token_events WHERE source = 'ZCode'
+    `).get().total;
+    assert.equal(eventTotal, (eventCounts.a + eventCounts.b) * perEvent);
+    assert.deepEqual(db.prepare(`
+      SELECT sum(total_tokens) AS total FROM daily_usage WHERE source = 'ZCode'
+    `).all().map(row => row.total), [eventTotal]);
+    assert.deepEqual(db.prepare(`
+      SELECT session_id AS sessionId, project_path AS projectPath, total_tokens AS total
+      FROM session_usage WHERE source = 'ZCode' ORDER BY session_id
+    `).all().map(row => ({ ...row })), [
+      { sessionId: 'sess_a', projectPath: 'project-a', total: eventCounts.a * perEvent },
+      { sessionId: 'sess_b', projectPath: 'project-b', total: eventCounts.b * perEvent },
+      // 仅存在于 CLI 会话表的会话（rollout 已清理且从未采集）按零行保留工作区
+      { sessionId: 'sess_dir_only', projectPath: 'project-d', total: 0 },
+      ...extraSessions.map(sessionId => ({ sessionId, projectPath: 'project-g', total: 0 }))
+    ]);
+  } finally {
+    db.close();
+  }
+}
+
+function createZcodeFixture() {
+  const dir = tempDir();
+  const rollout = join(dir, 'rollout');
+  mkdirSync(rollout, { recursive: true });
+  const rolloutA = join(rollout, 'model-io-sess_a.jsonl');
+  const rolloutB = join(rollout, 'model-io-sess_b.jsonl');
+  writeFileSync(rolloutA, zcodeLine('req-1', 'sess_a'));
+  writeFileSync(rolloutB, zcodeLine('req-1', 'sess_b'));
+  const sessionDbPath = join(dir, 'db.sqlite');
+  const sessionDb = new DatabaseSync(sessionDbPath);
+  sessionDb.exec('CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT)');
+  sessionDb.prepare('INSERT INTO session (id, directory) VALUES (?, ?)').run('sess_a', join(dir, 'project-a'));
+  sessionDb.prepare('INSERT INTO session (id, directory) VALUES (?, ?)').run('sess_b', join(dir, 'project-b'));
+  sessionDb.prepare('INSERT INTO session (id, directory) VALUES (?, ?)').run('sess_dir_only', join(dir, 'project-d'));
+  sessionDb.close();
+  const configPath = join(dir, 'collectors.json');
+  writeFileSync(configPath, JSON.stringify({
+    collectors: { zcode: { roots: [rollout], sessionDb: sessionDbPath } }
+  }), 'utf8');
+  return {
+    dir,
+    dbPath: join(dir, 'usage.sqlite'),
+    rolloutA,
+    rolloutB,
+    env: { TOKEN_WORK_CONFIG: configPath, NODE_OPTIONS: '--no-warnings' }
+  };
+}
+
+// fixture 不含任何会话正文，仅元数据与 usage 字段
+function zcodeLine(requestId: string, sessionId: string) {
+  return JSON.stringify({
+    completedAt: '2026-09-17T01:00:00.000Z',
+    durationMs: 8439,
+    requestId,
+    attempt: 1,
+    model: { modelId: 'GLM-5.3', providerId: 'account:bigmodel-individual-coding-plan' },
+    response: {
+      finishReason: 'tool-calls',
+      usage: { inputTokens: 139227, outputTokens: 372, totalTokens: 139599, cacheReadTokens: 128704, cacheWriteTokens: 0 }
+    },
+    sessionId,
+    querySource: 'main_turn',
+    type: 'model_io'
+  });
+}
 
 function createDeepSeekHarnessFixture() {
   const dir = tempDir();

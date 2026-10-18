@@ -54,7 +54,29 @@ test('first collect splits cached input out of inputTokens', async () => {
     assert.equal(event.inputTokens + event.outputTokens + event.cacheReadTokens + event.cacheCreationTokens, 139599);
     assert.equal(event.privacyLevel, 'safe');
     assert.equal(result.modelsJson.entries[0].workspaceLabel, 'project-a');
+    // 会话行按真实会话 id 归并，否则会与 token_events 对不上并重复计入总量
+    assert.equal(result.modelsJson.entries[0].sessionId, 'sess_fixture');
+    assert.equal(result.modelsJson.entries[0].lastActivity, '2026-09-17T01:00:00.000Z');
     assert.equal(result.reconciliation.managedEventIdPrefix, 'zcode:');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('sessions without rollout files keep their workspace from the CLI session table', async () => {
+  const { root, rollout } = fixtureRoot();
+  writeFileSync(join(rollout, 'model-io-sess_fixture.jsonl'), modelIoLine());
+  try {
+    const result = await collectFromRoots([rollout], null, {
+      sessionDirectories: new Map([
+        ['sess_fixture', '/Users/dev/project-a'],
+        ['sess_cleaned', '/Users/dev/project-b']
+      ])
+    });
+    const cleaned = result.modelsJson.entries.find(entry => entry.sessionId === 'sess_cleaned');
+    assert.equal(cleaned.workspaceLabel, 'project-b');
+    assert.equal(cleaned.input, 0);
+    assert.equal(result.tokenEvents.length, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -128,6 +150,29 @@ test('the same request duplicated across rollout files dedups to one event', asy
     const result = await collectFromRoots([rollout]);
     assert.equal(result.tokenEvents.length, 1);
     assert.equal(result.audit.usableTokenRecords, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('one session with two models collapses into a single session entry', async () => {
+  const { root, rollout } = fixtureRoot();
+  writeFileSync(join(rollout, 'model-io-sess_fixture.jsonl'), [
+    modelIoLine({ requestId: 'req-1', model: { modelId: 'GLM-5.3' } }),
+    modelIoLine({ requestId: 'req-2', completedAt: '2026-09-17T02:00:00.000Z', model: { modelId: 'GLM-4.6' } })
+  ].join('\n'));
+  try {
+    const result = await collectFromRoots([rollout], null, { sessionDirectories: new Map([['sess_fixture', '/Users/dev/project-a']]) });
+    assert.equal(result.tokenEvents.length, 2);
+    // 会话行主键只认 session_id：同一会话的两个模型合计成一行，模型取最后活动
+    assert.equal(result.modelsJson.entries.length, 1);
+    const entry = result.modelsJson.entries[0];
+    assert.equal(entry.sessionId, 'sess_fixture');
+    assert.equal(entry.input, 2 * 10523);
+    assert.equal(entry.output, 2 * 372);
+    assert.equal(entry.cacheRead, 2 * 128704);
+    assert.equal(entry.model, 'glm-4.6');
+    assert.equal(entry.lastActivity, '2026-09-17T02:00:00.000Z');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

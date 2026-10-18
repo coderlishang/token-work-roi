@@ -81,6 +81,8 @@
     }
   },
   "modelAliases": {
+    "seed-lite-7b": "doubao-seed-2.1-lite",
+    "9": "doubao-seed-2.1-lite",
     "gpt-5.6-terra": {
       "to": "glm-5.3-flash",
       "from": "2026-09-18"

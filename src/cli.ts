@@ -10,7 +10,7 @@ import { hostname } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { seedDemoDatabase } from './demo-seed.ts';
-import { auditExperimentalCollectors, detectCollectors, liveCollectSourceNames } from './collector-registry.ts';
+import { auditExperimentalCollectors, detectCollectors, LIVE_COLLECT_SOURCES, liveCollectSourceNames } from './collector-registry.ts';
 import { CCUSAGE_CLI_REPORTS, ccusageInvocation, runCcusageCliImportPlan } from './ccusage-bridge.ts';
 import { applyCcusageImport, assertCcusageImportCanApply, ccusageImportWouldChange, parseCcusageJsonText, planCcusageImport, readCcusageImportInput } from './ccusage-import.ts';
 import { createSqliteBackup, defaultDbPath, deleteBudgetProfile, listBudgetProfiles, openDb, openReadOnlyDb, upsertBudgetProfile } from './db.ts';
@@ -339,7 +339,7 @@ function envLiveCollectIntervalSeconds() {
 }
 
 async function collectCommand() {
-  const sources = args.sources || args.collectors || 'claude,codex,workbuddy,codebuddy';
+  const sources = args.sources || args.collectors || `${LIVE_COLLECT_SOURCES},cursor`;
   if (args.apply && args.dryRun) {
     throw new Error('Choose either --apply or --dry-run, not both.');
   }
@@ -379,7 +379,7 @@ async function collectCommand() {
 }
 
 async function coverageCommand() {
-  const sources = args.sources || args.collectors || 'claude,codex,workbuddy,codebuddy,cursor';
+  const sources = args.sources || args.collectors || `${LIVE_COLLECT_SOURCES},cursor`;
   const summary = await runCollectDryRun({ sources, dbPath: args.db });
   if (args.json) {
     console.log(JSON.stringify(summary, null, 2));
@@ -834,7 +834,7 @@ function runCollectDryRun({ sources, dbPath }: { sources?: string; dbPath?: stri
     resolve(SOURCE_DIR, 'collect.ts'),
     '--dry-run',
     '--sources',
-    sources || 'claude,codex,workbuddy,codebuddy,cursor',
+    sources || `${LIVE_COLLECT_SOURCES},cursor`,
     '--json'
   ];
   if (dbPath) collectArgs.push('--db', dbPath);
@@ -843,7 +843,7 @@ function runCollectDryRun({ sources, dbPath }: { sources?: string; dbPath?: stri
       cwd: PACKAGE_ROOT,
       env: {
         ...process.env,
-        TOKEN_WORK_COLLECTORS: sources || 'claude,codex,workbuddy,codebuddy,cursor'
+        TOKEN_WORK_COLLECTORS: sources || `${LIVE_COLLECT_SOURCES},cursor`
       },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true
@@ -1079,15 +1079,15 @@ function printHelp() {
     '  token-work statusline [--db data/usage.sqlite] [--window-minutes 15] [--format text|json]',
     '  token-work collectors [--json]',
     '  token-work collectors --audit [--json]',
-    '  token-work coverage --sources claude,codex,workbuddy,codebuddy,cursor [--json]',
+    '  token-work coverage [--sources <ids>] [--json]',
     '  token-work compare-ccusage --report=session --json --yes',
     '  token-work import-usage --format=ccusage-json --file <path|-> [--device <name>] [--dry-run|--apply] [--yes]',
     '  token-work import-usage --format=ccusage-cli --report=<daily|weekly|monthly|session|blocks> [--dry-run|--apply] [--yes]',
     '  token-work budget list|set|delete',
     '  token-work report --period=week --format=table|markdown|json',
     '  token-work policy --format=markdown|claude-md|agents-md',
-    '  token-work collect --dry-run --sources claude,codex,workbuddy,codebuddy,cursor',
-    '  token-work collect --apply --yes --sources claude,codex,workbuddy,codebuddy',
+    '  token-work collect --dry-run [--sources <ids>]',
+    '  token-work collect --apply --yes [--sources <ids>]',
     '  token-work doctor',
     '  token-work privacy-check [--include-untracked]'
   ].join('\n'));

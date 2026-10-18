@@ -188,8 +188,10 @@ function buildOutput(events, pricingData) {
 
   for (const event of events) {
     const dailyKey = `${event.date}::${event.model}`;
-    if (!dailyMap.has(dailyKey)) dailyMap.set(dailyKey, { date: event.date, model: event.model, tokens: zero() });
-    addTokens(dailyMap.get(dailyKey).tokens, event.tokens);
+    if (!dailyMap.has(dailyKey)) dailyMap.set(dailyKey, { date: event.date, model: event.model, tokens: zero(), cost: 0 });
+    const daily = dailyMap.get(dailyKey);
+    daily.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
+    addTokens(daily.tokens, event.tokens);
 
     const workspaceKey = `${event.projectLabel || event.sessionId}::${event.model}`;
     if (!workspaceMap.has(workspaceKey)) {
@@ -198,10 +200,13 @@ function buildOutput(events, pricingData) {
         workspaceLabel: event.projectLabel || event.sessionId,
         model: event.model,
         sessionId: event.sessionId,
-        tokens: zero()
+        tokens: zero(),
+        cost: 0
       });
     }
-    addTokens(workspaceMap.get(workspaceKey).tokens, event.tokens);
+    const workspaceRow = workspaceMap.get(workspaceKey);
+    workspaceRow.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
+    addTokens(workspaceRow.tokens, event.tokens);
   }
 
   const byDate = new Map();
@@ -218,7 +223,7 @@ function buildOutput(events, pricingData) {
         client: CLIENT_KEY,
         modelId: row.model,
         tokens: toTokenPayload(row.tokens),
-        cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData)
+        cost: row.cost
       }))
     }));
 
@@ -229,7 +234,7 @@ function buildOutput(events, pricingData) {
     sessionId: row.sessionId,
     model: row.model,
     ...toTokenPayload(row.tokens),
-    cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData)
+    cost: row.cost
   }));
 
   const tokenEvents = events.map(event => ({

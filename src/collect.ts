@@ -3,7 +3,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { hostname } from 'node:os';
 import { closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { createSqliteBackup, defaultDbPath, getCollectorMeta, openDb, recordRun, repairUsageTotals, setCollectorMeta, upsertDaily, upsertSession, upsertTokenEvent, usageTotalsNeedRepair } from './db.ts';
+import { createSqliteBackup, defaultDbPath, getCollectorMeta, openDb, recordRun, repairStoredCosts, repairUsageTotals, setCollectorMeta, upsertDaily, upsertSession, upsertTokenEvent, storedCostsNeedRepair, usageTotalsNeedRepair } from './db.ts';
 import { loadCollectorConfig } from './collector-config.ts';
 import { calculateCost, loadPricing } from './pricing.ts';
 import { canonicalModelName, localDateFromTimestamp } from './collectors/utils.ts';
@@ -358,7 +358,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
       type: 'data', device, source: label, sourceSummary, label, module,
       dailyRows, sessionRows, eventRows, reconciliation,
       // Buddy project/log records may rotate; merge their stable event IDs.
-      incremental: incrementalRefresh || id === 'codebuddy' || id === 'workbuddy'
+      incremental: incrementalRefresh || id === 'codebuddy' || id === 'workbuddy' || id === 'doubaowork'
     });
   }
 
@@ -369,6 +369,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
   }
 
   const needsStoredUsageRepair = mode === 'apply' && db && usageTotalsNeedRepair(db);
+  const needsStoredCostsRepair = mode === 'apply' && db && storedCostsNeedRepair(db);
   const needsCodexAccountingUpgrade = mode === 'apply' && db
     && payloads.some(payload => payload.type === 'data' && payload.sourceSummary.id === 'codex')
     && codexAccountingUpgradeNeeded(db);
@@ -389,6 +390,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
       || codeBuddyEventModelsWouldChange(db, payload)
     );
     const protectedMutation = needsStoredUsageRepair
+      || needsStoredCostsRepair
       || (needsCodexAccountingUpgrade && codexAccountingUpgradeChangesUsage(db))
       || hasClaudePlaceholders
       || hasCodexMigration || deletesStoredUsage || rebuildsEventUsage;
@@ -427,6 +429,9 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
   if (needsStoredUsageRepair) {
     runInTransaction(db, () => repairUsageTotals(db));
   }
+  if (needsStoredCostsRepair) {
+    runInTransaction(db, () => repairStoredCosts(db));
+  }
 
   for (const payload of payloads) {
     if (mode === 'apply') {
@@ -457,14 +462,21 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
         const rebuildWorkBuddy = removedWorkBuddyEvents > 0 || workBuddyEventModelsWouldChange(db, payload);
         const rebuildCodeBuddy = codeBuddyEventModelsWouldChange(db, payload);
         applyEventReconciliation(db, payload);
-        if (sourceSummary.id === 'deepseek-harness') {
-          // 清理 delta 计费修复前遗留的合成会话行，会话以事件原始 session_id 为准。
+        if (sourceSummary.id === 'deepseek-harness' || sourceSummary.id === 'zcode') {
+          // 清理历史遗留的合成会话行（delta 计费修复、ZCode 工作区聚合），会话以事件原始 session_id 为准。
+          // 带批注/产出/工作项关联的会话行保留：会话列表按会话行左连接批注，删行会让用户数据从界面消失。
           db.prepare(`
-            DELETE FROM session_usage
-            WHERE device = ? AND source = ?
-              AND session_id NOT IN (
+            DELETE FROM session_usage AS session
+            WHERE session.device = ? AND session.source = ?
+              AND session.session_id NOT IN (
                 SELECT DISTINCT session_id FROM token_events WHERE device = ? AND source = ?
               )
+              AND NOT EXISTS (SELECT 1 FROM session_annotations a
+                WHERE a.device = session.device AND a.source = session.source AND a.session_id = session.session_id)
+              AND NOT EXISTS (SELECT 1 FROM session_outputs o
+                WHERE o.device = session.device AND o.source = session.source AND o.session_id = session.session_id)
+              AND NOT EXISTS (SELECT 1 FROM work_item_sessions w
+                WHERE w.device = session.device AND w.source = session.source AND w.session_id = session.session_id)
           `).run(device, label, device, label);
         }
         dailyRows.forEach(row => upsertDaily(db, row));
@@ -1419,9 +1431,10 @@ function mergeHistoricalEventUsage(db, payload, pricingData) {
       ])]
     : payloadSources(payload);
   for (const source of sources) {
-    // Delta 计费采集器的 daily/session 必须由全部存储事件重建，不能只用本次增量。
-    if (payload.sourceSummary.id === 'deepseek-harness'
-      || (payload.incremental && ['codex', 'workbuddy', 'codebuddy'].includes(payload.sourceSummary.id))) {
+    // Delta 计费采集器的 daily/session 必须由全部存储事件重建，不能只用本次增量；
+    // ZCode 同理按事件重建会话行，增量扫描只覆盖变更文件，工作区聚合无法对齐事件。
+    if (['deepseek-harness', 'zcode'].includes(payload.sourceSummary.id)
+      || (payload.incremental && ['codex', 'workbuddy', 'codebuddy', 'doubaowork'].includes(payload.sourceSummary.id))) {
       rebuildIncrementalEventUsage(db, payload, source, pricingData);
       continue;
     }
@@ -1465,9 +1478,11 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
     .map(row => [row.sessionId, row.projectPath || null]));
   const sessions = new Map();
   const days = new Map();
+  const eventSessionIds = new Set();
 
   const addEvent = ({ sessionId, usageDate, lastActivity, model, tokens, projectPath = null }) => {
-    const sessionKey = ['workbuddy', 'codebuddy', 'deepseek-harness'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
+    const sessionKey = ['workbuddy', 'codebuddy', 'deepseek-harness', 'zcode'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
+    eventSessionIds.add(sessionId);
     const session = sessions.get(sessionKey) || usageRow({
       device: payload.device, source, sessionId,
       lastActivity: lastActivity || null, projectPath, model: model || ''
@@ -1488,7 +1503,8 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
   };
 
   for (const row of historicalRows) {
-    addEvent({ ...row, tokens: eventTokens(row) });
+    // 未变更会话的会话行也来自历史事件，工作区同样取自本次采集的会话行（ZCode 由 CLI 会话表提供）
+    addEvent({ ...row, tokens: eventTokens(row), projectPath: projectPaths.get(row.sessionId) || null });
   }
   for (const row of payload.eventRows) {
     if (row.source !== source) continue;
@@ -1506,6 +1522,31 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
     ...payload.dailyRows.filter(row => row.source !== source),
     ...days.values()
   ];
+  // 事件改判模型会留下旧 (日期,模型) 日行,落库前清掉重建结果之外的键。
+  const recomputedDailyKeys = new Set([...days.values()]
+    .map(row => `${row.usageDate} ${row.model}`));
+  const staleDailyRows = db.prepare(`
+    SELECT usage_date AS usageDate, model
+    FROM daily_usage
+    WHERE device = ? AND source = ?
+  `).all(payload.device, source)
+    .filter(row => !recomputedDailyKeys.has(`${row.usageDate} ${row.model}`));
+  if (staleDailyRows.length) {
+    const deleteStaleDaily = db.prepare(`
+      DELETE FROM daily_usage
+      WHERE device = ? AND source = ? AND usage_date = ? AND model = ?
+    `);
+    for (const row of staleDailyRows) {
+      deleteStaleDaily.run(payload.device, source, row.usageDate, row.model);
+    }
+  }
+  // 无事件的零行会话（ZCode 由 CLI 会话表提供）不经事件重建，原样保留，
+  // 否则下面的整体替换会让没有 rollout 记录的会话从会话列表消失。
+  for (const row of payload.sessionRows) {
+    if (row.source !== source || eventSessionIds.has(row.sessionId)) continue;
+    if ((row.totalTokens || 0) > 0) continue;
+    sessions.set(row.sessionId, row);
+  }
   payload.sessionRows = [
     ...payload.sessionRows.filter(row => row.source !== source),
     ...sessions.values()

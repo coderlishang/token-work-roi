@@ -109,6 +109,15 @@ export const COLLECTOR_REGISTRY = [
     roots: () => configuredPaths('deepseekHarness', 'roots', ['~/.dsh']),
     note: 'Experimental: reads only the harness-provided cumulative tokenUsage totals per session; message and tool content are ignored.'
   }),
+  experimentalCollector('doubaowork', 'DoubaoWork', {
+    module: './collectors/doubaowork.ts',
+    privacyLevel: 'metadata-only',
+    roots: () => configuredPaths('doubaowork', 'roots', [
+      '~/Library/Application Support/DoubaoWork/Default/IndexedDB/chrome_doubaowork-chat_0.indexeddb.leveldb',
+      '${APPDATA}/DoubaoWork/Default/IndexedDB/chrome_doubaowork-chat_0.indexeddb.leveldb'
+    ]),
+    note: 'Experimental: sums the four context_window_usage components of each chat request as input tokens; output-side counts do not exist locally and the local model key maps to doubao-seed-2.1-lite via modelAliases.'
+  }),
   stableCollector('workbuddy', 'WorkBuddy', './collectors/workbuddy.ts', {
     privacyLevel: 'metadata-only',
     roots: () => [
@@ -171,7 +180,7 @@ export function collectorLabel(id) {
 
 // Sources the local UI collects in the background (start banner, live refresh
 // message, coverage dry-run defaults all derive from this single list).
-export const LIVE_COLLECT_SOURCES = 'claude,codex,workbuddy,codebuddy,deepseek-harness,zcode';
+export const LIVE_COLLECT_SOURCES = 'claude,codex,workbuddy,codebuddy,deepseek-harness,zcode,doubaowork';
 
 export function liveCollectSourceNames() {
   const labels = LIVE_COLLECT_SOURCES.split(',').map(collectorLabel);

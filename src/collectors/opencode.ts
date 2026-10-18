@@ -271,7 +271,7 @@ export async function collect(pricingData = null) {
     if (dedupKey && seen.has(dedupKey)) return;
     if (dedupKey) seen.add(dedupKey);
 
-    const calculatedCost = calculateCost(message.model, message.tokens, pricingData, message.provider);
+    const calculatedCost = calculateCost(message.model, message.tokens, pricingData, message.provider, message.date);
     const cost = calculatedCost;
 
     const dk = `${message.date}::${message.model}`;

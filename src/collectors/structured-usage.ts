@@ -305,7 +305,8 @@ function hasReliableTokens(tokens) {
   return tokens.input > 0 || tokens.output > 0 || tokens.cacheRead > 0 || tokens.cacheWrite > 0 || tokens.reasoning > 0;
 }
 
-export function buildStructuredUsageOutput(clientKey, events, pricingData) {
+export function buildStructuredUsageOutput(clientKey, events, pricingData, options: { sessionScoped?: boolean } = {}) {
+  const sessionScoped = options.sessionScoped === true;
   const dailyMap = new Map();
   const workspaceMap = new Map();
 
@@ -315,16 +316,27 @@ export function buildStructuredUsageOutput(clientKey, events, pricingData) {
     add(dailyMap.get(dailyKey).tokens, event.tokens);
 
     const workspace = event.projectLabel || event.sessionId;
-    const workspaceKey = `${workspace}::${event.model}`;
+    // 会话行须按事件 session_id 归并：按工作区归并会生成与 token_events 对不上的会话行，重复计入总量；
+    // 同一会话的多个模型归并成一行，会话行主键只认 session_id。
+    const workspaceKey = sessionScoped ? event.sessionId : `${workspace}::${event.model}`;
     if (!workspaceMap.has(workspaceKey)) {
       workspaceMap.set(workspaceKey, {
         workspace,
         workspaceLabel: workspace,
+        sessionId: sessionScoped ? event.sessionId : null,
+        lastActivity: sessionScoped ? event.timestamp : null,
         model: event.model,
-        tokens: zero()
+        tokens: zero(),
+        cost: 0
       });
     }
-    add(workspaceMap.get(workspaceKey).tokens, event.tokens);
+    const workspaceRow = workspaceMap.get(workspaceKey);
+    workspaceRow.cost += calculateCost(event.model, event.tokens, pricingData, null, event.date);
+    add(workspaceRow.tokens, event.tokens);
+    if (sessionScoped && (!workspaceRow.lastActivity || event.timestamp > workspaceRow.lastActivity)) {
+      workspaceRow.lastActivity = event.timestamp;
+      workspaceRow.model = event.model;
+    }
   }
 
   const byDate = new Map();
@@ -349,9 +361,10 @@ export function buildStructuredUsageOutput(clientKey, events, pricingData) {
     client: clientKey,
     workspaceKey: row.workspace,
     workspaceLabel: row.workspaceLabel,
+    ...(row.sessionId ? { sessionId: row.sessionId, lastActivity: row.lastActivity } : {}),
     model: row.model,
     ...toTokenPayload(row.tokens),
-    cost: calculateCost(row.model, toTokenPayload(row.tokens), pricingData)
+    cost: row.cost
   }));
 
   const tokenEvents = events.map(event => ({

@@ -126,7 +126,8 @@ test('v2 APIs cover alias rules, batch annotations, outputs, backup, export and 
     assert.deepEqual(imported.imported, {
       sessionAnnotations: 2,
       sessionOutputs: 1,
-      projectAliasRules: 1
+      projectAliasRules: 1,
+      skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
     });
     assert.equal(existsSync(imported.backup.path), true);
     assert.equal(existsSync(backup.backup.path), false);
@@ -137,7 +138,8 @@ test('v2 APIs cover alias rules, batch annotations, outputs, backup, export and 
     assert.deepEqual(emptyImport.imported, {
       sessionAnnotations: 0,
       sessionOutputs: 0,
-      projectAliasRules: 0
+      projectAliasRules: 0,
+      skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
     });
 
     const deletedOutput = await deleteJson(port, '/api/session-outputs', {

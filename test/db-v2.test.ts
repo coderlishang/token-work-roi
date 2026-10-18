@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -18,6 +18,7 @@ import {
   upsertSessionAnnotation,
   upsertSessionOutput
 } from '../src/db.ts';
+import { resetClaudeRequestModelCache } from '../src/claude-settings.ts';
 import { upsertDailyBatch, upsertTokenEvent } from '../src/db.ts';
 import { canonicalModelName } from '../src/collectors/utils.ts';
 
@@ -266,7 +267,8 @@ test('annotation export and import round-trip v3 data', () => withDb((db) => {
   assert.deepEqual(imported, {
     sessionAnnotations: 1,
     sessionOutputs: 1,
-    projectAliasRules: 1
+    projectAliasRules: 1,
+    skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
   });
   assert.equal(db.prepare('SELECT COUNT(*) AS total FROM session_outputs').get().total, 1);
   const importedAnnotation = db.prepare('SELECT work_purpose AS workPurpose, work_stage AS workStage, value_level AS valueLevel FROM session_annotations').get();
@@ -276,3 +278,72 @@ test('annotation export and import round-trip v3 data', () => withDb((db) => {
   assert.equal(importedAnnotation.valueLevel, '关键');
   assert.equal(importedOutput.outputType, '部署');
 }));
+
+test('annotation import skips rows whose session row is gone instead of failing the batch', () => withDb((db) => {
+  const imported = importAnnotationData(db, {
+    sessionAnnotations: [
+      { device: 'devbox', source: 'Codex CLI', sessionId: 'codex:one', projectAlias: 'live', taskType: '功能开发' },
+      { device: 'devbox', source: 'Codex CLI', sessionId: 'deleted-session', projectAlias: 'stale' }
+    ],
+    sessionOutputs: [
+      { device: 'devbox', source: 'Claude Code', sessionId: 'claude:two', outputUrl: 'https://example.com/live' },
+      { device: 'devbox', source: 'Claude Code', sessionId: 'deleted-session', outputUrl: 'https://example.com/stale' }
+    ]
+  });
+  assert.deepEqual(imported, {
+    sessionAnnotations: 1,
+    sessionOutputs: 1,
+    projectAliasRules: 0,
+    skipped: { sessionAnnotations: 1, sessionOutputs: 1 }
+  });
+  assert.equal(db.prepare(`SELECT project_alias FROM session_annotations WHERE session_id='codex:one'`).get().project_alias, 'live');
+  assert.equal(db.prepare(`SELECT output_url FROM session_outputs WHERE session_id='claude:two'`).get().output_url, 'https://example.com/live');
+  assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM session_annotations WHERE session_id='deleted-session'`).get().n, 0);
+}));
+
+test('ark-auto legacy session dedup moves annotations/outputs/links to the canonical twin', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-work-db-ark-'));
+  const dbPath = join(dir, 'usage.sqlite');
+  const configDir = join(dir, 'claude-config');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_MODEL: 'ark-code-latest' } }));
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  resetClaudeRequestModelCache();
+  try {
+    let db = openDb(dbPath);
+    db.prepare(`INSERT INTO session_usage (device, source, session_id, model, updated_at) VALUES
+      ('dev1', 'Claude Code', 'sess-base:auto', 'auto', datetime('now')),
+      ('dev1', 'Claude Code', 'sess-base:ark-code-latest', 'ark-code-latest', datetime('now'))`).run();
+    // 孪生行已有自己的标注：去重时保留孪生侧，不产生主键冲突
+    db.prepare(`INSERT INTO session_annotations (device, source, session_id, project_alias, note) VALUES
+      ('dev1', 'Claude Code', 'sess-base:auto', 'legacy-alias', 'legacy note'),
+      ('dev1', 'Claude Code', 'sess-base:ark-code-latest', 'twin-alias', 'twin note')`).run();
+    db.prepare(`INSERT INTO session_outputs (device, source, session_id, output_url)
+      VALUES ('dev1', 'Claude Code', 'sess-base:auto', 'https://example.com/pr/9')`).run();
+    db.prepare(`INSERT INTO work_items (title) VALUES ('ark dedup')`).run();
+    db.prepare(`INSERT INTO work_item_sessions (work_item_id, device, source, session_id)
+      SELECT id, 'dev1', 'Claude Code', 'sess-base:auto' FROM work_items LIMIT 1`).run();
+    db.close();
+
+    // 重新打开触发 legacy 去重；再开两次确认副作用归零
+    for (let round = 0; round < 3; round++) {
+      db = openDb(dbPath);
+      try {
+        assert.deepEqual(db.prepare(`SELECT session_id FROM session_usage WHERE device='dev1'`).all().map(row => row.session_id),
+          ['sess-base:ark-code-latest']);
+        assert.deepEqual(db.prepare(`SELECT session_id, project_alias, note FROM session_annotations WHERE device='dev1'`).all().map(row => ({ ...row })),
+          [{ session_id: 'sess-base:ark-code-latest', project_alias: 'twin-alias', note: 'twin note' }]);
+        assert.deepEqual(db.prepare(`SELECT session_id FROM session_outputs WHERE device='dev1'`).all().map(row => row.session_id),
+          ['sess-base:ark-code-latest']);
+        assert.deepEqual(db.prepare(`SELECT session_id FROM work_item_sessions WHERE device='dev1'`).all().map(row => row.session_id),
+          ['sess-base:ark-code-latest']);
+      } finally { db.close(); }
+    }
+  } finally {
+    if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+    resetClaudeRequestModelCache();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
