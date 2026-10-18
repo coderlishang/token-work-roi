@@ -498,6 +498,41 @@ test('calculates Kimi API USD price from official RMB rates', () => {
   assert.equal(light.priced, true);
 });
 
+test('prices Kimi K3 from the corrected K3-series column order and recognizes K2.8 Preview as unpriced', () => {
+  // 官方 K3 表列序:缓存写入5m | 缓存写入1h | 输入命中 | 输入未命中 | 输出。
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'kimi-k3');
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.deepEqual(rate.officialRatesPerMTok.ratesPerMTok, {
+    input: 20,
+    cachedInput: 2,
+    cacheWrite5m: 20,
+    cacheWrite1h: 40,
+    output: 100
+  });
+  assert.deepEqual(rate.ratesPerMTok, {
+    input: 20 / rate.officialRatesPerMTok.exchangeRate,
+    cachedInput: 2 / rate.officialRatesPerMTok.exchangeRate,
+    cacheWrite5m: 20 / rate.officialRatesPerMTok.exchangeRate,
+    cacheWrite1h: 40 / rate.officialRatesPerMTok.exchangeRate,
+    output: 100 / rate.officialRatesPerMTok.exchangeRate
+  });
+
+  const cost = calculateOfficialCost('kimi-k3', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  assert.equal(cost.priced, true);
+  assert.ok(Math.abs(cost.totalUSD - (20 + 2 + 100) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+
+  // K2.8 Preview 仅经 Kimi Code 会员(kimi-for-coding)提供,官方无独立按量价,识别但不计费。
+  const preview = calculateOfficialCost('kimi-k2.8-preview', { input: 1_000_000 });
+  assert.equal(preview.resolvedModel, 'kimi-k2.8-preview');
+  assert.equal(preview.provider, 'Kimi');
+  assert.equal(preview.priced, false);
+  assert.equal(calculateOfficialCost('kimi-k2-8-preview', { input: 1_000_000 }).resolvedModel, 'kimi-k2.8-preview');
+});
+
 test('calculates Qwen API USD price from official RMB rates', () => {
   const coder = calculateOfficialCost('qwen3-coder', {
     input: 1_000_000,

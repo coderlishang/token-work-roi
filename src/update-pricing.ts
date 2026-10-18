@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import {
   OFFICIAL_PRICING_SOURCES,
   OFFICIAL_PRICE_TABLE,
@@ -154,7 +154,7 @@ if (ok === 0 || !exchangeOk) {
 } else {
   validateOfficialPricingRefresh(pricing.models);
   await mkdir(resolve(process.cwd(), 'data'), { recursive: true });
-  await writeFile(pricingCachePath, `${JSON.stringify(pricing, null, 2)}\n`, 'utf8');
+  await writeFileAtomic(pricingCachePath, `${JSON.stringify(pricing, null, 2)}\n`);
   await updateBuiltinPricingTable(pricingSourcePath, pricing);
 
   const parsed = pricing.models.filter(model => (
@@ -189,7 +189,7 @@ async function updateBuiltinPricingTable(filePath, pricing) {
   const existingEndLength = tableEndWithSemi >= 0 ? 3 : 2;
   const nextTable = `export const OFFICIAL_PRICE_TABLE = [\n${pricing.models.map(officialRateSource).join(',\n')}\n];`;
   const nextSource = `${withDate.slice(0, tableStart)}${nextTable}${withDate.slice(tableEnd + existingEndLength)}`;
-  if (nextSource !== source) await writeFile(filePath, nextSource, 'utf8');
+  if (nextSource !== source) await writeFileAtomic(filePath, nextSource);
 }
 
 async function readPreviousPricingModels(filePath) {
@@ -986,34 +986,49 @@ function usdAmounts(value) {
 }
 
 function parseKimiModels(body, exchangeRate) {
-  const rows = Array.from(
-    body.matchAll(/\["(kimi-(?:k3|k2\.(?:7-code(?:-highspeed)?|6|5)))",\s*"1M tokens",\s*"¥([0-9.]+)",\s*"¥([0-9.]+)",\s*"¥([0-9.]+)"/g),
-    match => ({
-      model: match[1],
-      cachedInput: Number(match[2]),
-      input: Number(match[3]),
-      output: Number(match[4])
-    })
-  );
-  return rows.map(row => rateModel('Kimi', row.model, cnyToUsdRates({
-    input: row.input,
-    cachedInput: row.cachedInput,
-    cacheWrite5m: row.input,
-    cacheWrite1h: row.input,
-    output: row.output
-  }, exchangeRate), 'Kimi', 'official-page-asset', {
-    currency: 'CNY',
-    unit: '1M tokens',
-    ratesPerMTok: {
-      input: row.input,
-      cachedInput: row.cachedInput,
-      cacheWrite5m: row.input,
-      cacheWrite1h: row.input,
-      output: row.output
-    },
-    exchangeRate: exchangeRate.rate,
-    sourceUnit: '元 / 1M tokens'
-  }, 'Official Kimi API CNY rate parsed from the current model pricing pages.')).filter(Boolean);
+  // K3 表比 K2 表多两列缓存写入且列序不同(写5m | 写1h | 命中 | 未命中 | 输出),
+  // 必须按各表表头定位列;按位置硬取前三个 ¥ 值会把 K3 的缓存写入当输入、
+  // 命中输入当输出(实测踩坑)。
+  const models = [];
+  for (const tableMatch of body.matchAll(/<DocTable\b[\s\S]*?\/>/g)) {
+    const titles = Array.from(tableMatch[0].matchAll(/title:\s*"([^"]+)"/g), match => match[1]);
+    const column = (...keywords) => titles.findIndex(title => keywords.every(keyword => title.includes(keyword)));
+    const hitIndex = column('缓存命中');
+    const missIndex = column('缓存未命中');
+    const inputIndex = missIndex >= 0 ? missIndex : column('输入价格');
+    const outputIndex = column('输出价格');
+    if (hitIndex < 0 || inputIndex < 0 || outputIndex < 0) continue;
+    const write5mIndex = column('缓存写入', '5min');
+    const write1hIndex = column('缓存写入', '1h');
+    for (const rowMatch of tableMatch[0].matchAll(/\[((?:\s*"[^"]*",)+\s*"[^"]*")\s*\]/g)) {
+      const cells = Array.from(rowMatch[1].matchAll(/"([^"]*)"/g), match => match[1]);
+      if (!/^kimi-(?:k3|k2\.(?:7-code(?:-highspeed)?|6|5))$/.test(cells[0]) || cells[1] !== '1M tokens') continue;
+      // 缺列(如 K2 表无缓存写入)必须返回 NaN 走默认值,Number('')=0 会被误当有效费率。
+      const amount = index => index >= 0 && index < cells.length ? Number(String(cells[index]).replace('¥', '')) : NaN;
+      const input = amount(inputIndex);
+      const cachedInput = amount(hitIndex);
+      const output = amount(outputIndex);
+      const cacheWrite5m = amount(write5mIndex);
+      const cacheWrite1h = amount(write1hIndex);
+      if (![input, cachedInput, output].every(Number.isFinite)) continue;
+      const rates = {
+        input,
+        cachedInput,
+        cacheWrite5m: Number.isFinite(cacheWrite5m) ? cacheWrite5m : input,
+        cacheWrite1h: Number.isFinite(cacheWrite1h) ? cacheWrite1h : input,
+        output
+      };
+      models.push(rateModel('Kimi', cells[0], cnyToUsdRates(rates, exchangeRate), 'Kimi', 'official-page-asset', {
+        currency: 'CNY',
+        unit: '1M tokens',
+        ratesPerMTok: rates,
+        exchangeRate: exchangeRate.rate,
+        sourceUnit: '元 / 1M tokens'
+      }, 'Official Kimi API CNY rate parsed from the current model pricing pages.'));
+    }
+  }
+  // 汇率无效时 rateModel 返回 null,与旧实现一致过滤掉。
+  return models.filter(Boolean);
 }
 
 function parseTencentHunyuanModels(body, exchangeRate) {
@@ -1284,4 +1299,18 @@ function absoluteUrl(value, baseUrl) {
   if (value.startsWith('//')) return `https:${value}`;
   if (/^(static|js|css)\//.test(value)) return new URL(`/${value}`, baseUrl).toString();
   return new URL(value, baseUrl).toString();
+}
+
+// 本脚本由 CI 定时无人值守运行；official-pricing.json 撕裂尚有内置表兜底，
+// 但 pricing.ts 截断会让其后每次 collect 子进程 import 失败。同目录临时文件
+// 写完后 rename，POSIX 原子替换保证两个文件要么是完整旧版要么是完整新版。
+async function writeFileAtomic(filePath, content) {
+  const tmpPath = `${filePath}.tmp-${process.pid}`;
+  await writeFile(tmpPath, content, 'utf8');
+  try {
+    await rename(tmpPath, filePath);
+  } catch (error) {
+    await rm(tmpPath).catch(() => {});
+    throw error;
+  }
 }

@@ -18,7 +18,7 @@ export function roots() {
 export async function collect(pricingData = null, options = {}) {
   const result = await readZcodeUsage(roots(), options);
   return {
-    ...buildStructuredUsageOutput(CLIENT_KEY, result.events, pricingData),
+    ...zcodeOutput(result.events, result.directories, pricingData),
     reconciliation: zcodeReconciliation()
   };
 }
@@ -26,7 +26,7 @@ export async function collect(pricingData = null, options = {}) {
 export async function collectWithAudit(pricingData = null, options = {}) {
   const result = await readZcodeUsage(roots(), options);
   return {
-    ...buildStructuredUsageOutput(CLIENT_KEY, result.events, pricingData),
+    ...zcodeOutput(result.events, result.directories, pricingData),
     reconciliation: zcodeReconciliation(),
     audit: result.audit
   };
@@ -39,10 +39,37 @@ export async function audit() {
 export async function collectFromRoots(roots, pricingData = null, options = {}) {
   const result = await readZcodeUsage(roots, options);
   return {
-    ...buildStructuredUsageOutput(CLIENT_KEY, result.events, pricingData),
+    ...zcodeOutput(result.events, result.directories, pricingData),
     reconciliation: zcodeReconciliation(),
     audit: result.audit
   };
+}
+
+// 会话行按事件 session_id 归并，工作区作为 project_path：事件里已有稳定会话 id，
+// 按工作区归并会生成与 token_events 对不上的会话行，重复计入总量。
+// CLI 会话表保留全部会话的工作区，rollout 文件被清理后仍按会话输出工作区映射。
+function zcodeOutput(events, directories, pricingData) {
+  const output = buildStructuredUsageOutput(CLIENT_KEY, events, pricingData, { sessionScoped: true });
+  const known = new Set(output.modelsJson.entries.map(entry => entry.sessionId));
+  for (const [sessionId, directory] of directories) {
+    if (known.has(sessionId)) continue;
+    const workspace = projectLabelFrom(directory);
+    output.modelsJson.entries.push({
+      client: CLIENT_KEY,
+      workspaceKey: workspace,
+      workspaceLabel: workspace,
+      sessionId,
+      lastActivity: null,
+      model: '',
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      reasoning: 0,
+      cost: 0
+    });
+  }
+  return output;
 }
 
 // 事件 id 由 (sessionId, requestId, attempt) 稳定派生，重复采集靠 upsert 幂等；
@@ -65,7 +92,7 @@ async function readZcodeUsage(roots, options: { changedAfterMs?: number; session
     events.push(...result);
   }
 
-  return { events, audit };
+  return { events, audit, directories };
 }
 
 async function listRolloutFiles(roots, changedAfterMs) {

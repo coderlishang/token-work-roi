@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { configuredClaudeRequestModel } from './claude-settings.ts';
 import { canonicalModelName, localDateFromTimestamp } from './collectors/utils.ts';
-import { calculateCost } from './pricing.ts';
+import { calculateCost, resolveOfficialPricing } from './pricing.ts';
 
 type InputRecord = Record<string, unknown>;
 
@@ -195,9 +195,42 @@ function repairArkAutoModelNames(db, dbPath) {
     const deleteSession = db.prepare(`
       DELETE FROM session_usage WHERE device = ? AND source = 'Claude Code' AND session_id = ?
     `);
+    // 会话行删除会级联删掉挂在其上的标注/产出/工作项关联，先迁到孪生行再删；
+    // 会话列表按会话行左连接批注，直接删会让用户数据从界面消失。
+    const discardTwinUserRows = {};
+    const moveUserRows = {};
+    for (const table of ['session_annotations', 'session_outputs']) {
+      discardTwinUserRows[table] = db.prepare(`
+        DELETE FROM ${table}
+        WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+          AND EXISTS (SELECT 1 FROM ${table} AS twin
+            WHERE twin.device = ${table}.device AND twin.source = ${table}.source AND twin.session_id = ?)
+      `);
+      moveUserRows[table] = db.prepare(`
+        UPDATE ${table} SET session_id = ? WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+      `);
+    }
+    const discardTwinLink = db.prepare(`
+      DELETE FROM work_item_sessions
+      WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+        AND EXISTS (SELECT 1 FROM work_item_sessions AS twin
+          WHERE twin.work_item_id = work_item_sessions.work_item_id
+            AND twin.device = work_item_sessions.device AND twin.source = work_item_sessions.source
+            AND twin.session_id = ?)
+    `);
+    const moveLink = db.prepare(`
+      UPDATE work_item_sessions SET session_id = ? WHERE device = ? AND source = 'Claude Code' AND session_id = ?
+    `);
     for (const row of legacySessions) {
       const base = legacyBaseOf(row.session_id);
-      if (canonicalSessionTwin.get(row.device, `${base}:${canonical}`)) {
+      const twinId = `${base}:${canonical}`;
+      if (canonicalSessionTwin.get(row.device, twinId)) {
+        for (const table of ['session_annotations', 'session_outputs']) {
+          discardTwinUserRows[table].run(row.device, row.session_id, twinId);
+          moveUserRows[table].run(twinId, row.device, row.session_id);
+        }
+        discardTwinLink.run(row.device, row.session_id, twinId);
+        moveLink.run(twinId, row.device, row.session_id);
         deleteSession.run(row.device, row.session_id);
       }
     }
@@ -1117,9 +1150,22 @@ export function importAnnotationData(db, payload: InputRecord = {}) {
     projectAliasRules: 0
   };
 
+  // 标注/产出经外键挂在会话行上，导出后该会话行可能已被清理；缺失会话的行
+  // 在界面本就不可见（会话列表按会话行左连接），跳过并计数而不是让整批导入失败。
+  const sessionExists = db.prepare(`
+    SELECT 1 FROM session_usage WHERE device = ? AND source = ? AND session_id = ? LIMIT 1
+  `);
+  const hasSession = row => Boolean(sessionExists.get(row.device, row.source, row.sessionId ?? row.session_id));
+  const liveAnnotations = sessionAnnotations.filter(hasSession);
+  const liveOutputs = sessionOutputs.filter(hasSession);
+  const skipped = {
+    sessionAnnotations: sessionAnnotations.length - liveAnnotations.length,
+    sessionOutputs: sessionOutputs.length - liveOutputs.length
+  };
+
   db.exec('BEGIN');
   try {
-    for (const row of sessionAnnotations) {
+    for (const row of liveAnnotations) {
       upsertSessionAnnotation(db, {
         ...row,
         annotationSource: row.annotationSource ?? row.annotation_source ?? 'imported',
@@ -1127,7 +1173,7 @@ export function importAnnotationData(db, payload: InputRecord = {}) {
       });
       counts.sessionAnnotations += 1;
     }
-    for (const row of sessionOutputs) {
+    for (const row of liveOutputs) {
       upsertSessionOutput(db, row);
       counts.sessionOutputs += 1;
     }
@@ -1141,7 +1187,7 @@ export function importAnnotationData(db, payload: InputRecord = {}) {
     throw error;
   }
 
-  return counts;
+  return { ...counts, skipped };
 }
 
 export function applyAutoSessionAnnotations(db, suggestions = [], { runId = autoRunId(), threshold = 80 } = {}) {
@@ -1943,4 +1989,121 @@ function ensureColumn(db, table, column, definition) {
   if (!exists) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
+}
+
+const COST_REPAIR_EPSILON = 1e-6;
+
+// cost_usd 只在行落库时按当时的官方价目计算，价目后补或修正不会回写旧行。
+// 按当前价目重算：事件齐备的会话行按事件逐 (本地日期, 模型) 复现（与采集写入的
+// 逐事件累加完全一致，跨调价日/混模型会话不会来回改写）；无事件的行（ccusage
+// 导入等）退回按行聚合 + last_activity 日期单次计算。未定价模型跳过，避免把
+// 免费/未定价行清零；差额小于阈值的行不动，避免浮点抖动反复改写。
+function officialRowCost(model, tokens, usageDate) {
+  const pricing = resolveOfficialPricing(model, null, null, usageDate);
+  if (!pricing || !pricing.priced) return null;
+  return calculateCost(model, tokens, null, null, usageDate);
+}
+
+function collectStoredCostRepairs(db) {
+  const repairs = { daily: [], sessions: [] };
+
+  for (const row of db.prepare(`
+    SELECT rowid AS id, usage_date AS usageDate, model,
+      input_tokens AS input, output_tokens AS output,
+      cache_read_tokens AS cacheRead, cache_creation_tokens AS cacheWrite,
+      cached_input_tokens AS cachedInput,
+      reasoning_output_tokens AS reasoning, cost_usd AS costUSD
+    FROM daily_usage
+  `).all()) {
+    const cost = officialRowCost(row.model, {
+      input: row.input, output: row.output,
+      cacheRead: row.cacheRead + row.cachedInput,
+      cacheWrite: row.cacheWrite, reasoning: row.reasoning
+    }, row.usageDate);
+    if (cost != null && Math.abs(cost - (row.costUSD || 0)) > COST_REPAIR_EPSILON) {
+      repairs.daily.push({ id: row.id, cost });
+    }
+  }
+
+  const eventsBySession = new Map();
+  for (const row of db.prepare(`
+    SELECT device, source, session_id, timestamp, model,
+      input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens
+    FROM token_events
+  `).all()) {
+    const key = `${row.device}\u0000${row.source}\u0000${row.session_id}`;
+    let bucket = eventsBySession.get(key);
+    if (!bucket) {
+      bucket = {
+        grand: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+        parts: new Map()
+      };
+      eventsBySession.set(key, bucket);
+    }
+    bucket.grand.input += row.input_tokens;
+    bucket.grand.output += row.output_tokens;
+    bucket.grand.cacheRead += row.cache_read_tokens;
+    bucket.grand.cacheWrite += row.cache_creation_tokens;
+    bucket.grand.reasoning += row.reasoning_tokens;
+    const usageDate = localDateFromTimestamp(row.timestamp);
+    const partKey = `${usageDate}\u0000${row.model}`;
+    let part = bucket.parts.get(partKey);
+    if (!part) {
+      part = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+      bucket.parts.set(partKey, part);
+    }
+    part.input += row.input_tokens;
+    part.output += row.output_tokens;
+    part.cacheRead += row.cache_read_tokens;
+    part.cacheWrite += row.cache_creation_tokens;
+    part.reasoning += row.reasoning_tokens;
+  }
+
+  for (const row of db.prepare(`
+    SELECT rowid AS id, device, source, session_id, model, last_activity,
+      input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+      cached_input_tokens, reasoning_output_tokens, cost_usd
+    FROM session_usage
+  `).all()) {
+    const bucket = eventsBySession.get(`${row.device}\u0000${row.source}\u0000${row.session_id}`);
+    let cost;
+    if (bucket && !row.cached_input_tokens
+      && bucket.grand.input === row.input_tokens
+      && bucket.grand.output === row.output_tokens
+      && bucket.grand.cacheRead === row.cache_read_tokens
+      && bucket.grand.cacheWrite === row.cache_creation_tokens
+      && bucket.grand.reasoning === row.reasoning_output_tokens) {
+      cost = 0;
+      for (const [partKey, part] of bucket.parts) {
+        const [usageDate, partModel] = partKey.split('\u0000');
+        cost += calculateCost(partModel, part, null, null, usageDate);
+      }
+    } else {
+      const usageDate = row.last_activity ? localDateFromTimestamp(row.last_activity) : null;
+      cost = officialRowCost(row.model, {
+        input: row.input_tokens, output: row.output_tokens,
+        cacheRead: row.cache_read_tokens + row.cached_input_tokens,
+        cacheWrite: row.cache_creation_tokens, reasoning: row.reasoning_output_tokens
+      }, usageDate);
+    }
+    if (cost != null && Math.abs(cost - (row.cost_usd || 0)) > COST_REPAIR_EPSILON) {
+      repairs.sessions.push({ id: row.id, cost });
+    }
+  }
+
+  return repairs;
+}
+
+export function storedCostsNeedRepair(db) {
+  const repairs = collectStoredCostRepairs(db);
+  return repairs.daily.length > 0 || repairs.sessions.length > 0;
+}
+
+export function repairStoredCosts(db) {
+  const repairs = collectStoredCostRepairs(db);
+  const updateDaily = db.prepare(`UPDATE daily_usage SET cost_usd = ?, updated_at = datetime('now') WHERE rowid = ?`);
+  const updateSession = db.prepare(`UPDATE session_usage SET cost_usd = ?, updated_at = datetime('now') WHERE rowid = ?`);
+  for (const repair of repairs.daily) updateDaily.run(repair.cost, repair.id);
+  for (const repair of repairs.sessions) updateSession.run(repair.cost, repair.id);
+  return { daily: repairs.daily.length, sessions: repairs.sessions.length };
 }

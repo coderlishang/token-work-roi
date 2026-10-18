@@ -1397,12 +1397,12 @@ export const OFFICIAL_PRICE_TABLE = [
     provider: "Kimi",
     model: "kimi-k3",
     aliases: ["kimi-k3"],
-    input: 5.965674997483231,
-    cachedInput: 2.9828374987416155,
-    cacheWrite5m: 5.965674997483231,
+    input: 2.9828374987416155,
+    cachedInput: 0.29828374987416156,
+    cacheWrite5m: 2.9828374987416155,
     cacheWrite1h: 5.965674997483231,
-    output: 0.29828374987416156,
-    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":40,"cachedInput":20,"cacheWrite5m":40,"cacheWrite1h":40,"output":2},"exchangeRate":6.705025,"sourceUnit":"元 / 1M tokens"},
+    output: 14.914187493708077,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":20,"cachedInput":2,"cacheWrite5m":20,"cacheWrite1h":40,"output":100},"exchangeRate":6.705025,"sourceUnit":"元 / 1M tokens"},
     source: "Kimi",
     note: "Official Kimi API CNY rate parsed from the current model pricing pages."
   }),
@@ -1457,6 +1457,14 @@ export const OFFICIAL_PRICE_TABLE = [
     officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":4,"cachedInput":0.7,"cacheWrite5m":4,"cacheWrite1h":4,"output":21},"exchangeRate":6.705025,"sourceUnit":"元 / 1M tokens"},
     source: "Kimi",
     note: "Official Kimi API CNY rate parsed from the current model pricing pages."
+  }),
+  officialRate({
+    provider: "Kimi",
+    model: "kimi-k2.8-preview",
+    aliases: ["kimi-k2-8-preview"],
+    source: "Kimi",
+    unavailableReason: "Kimi K2.8 Preview is served to Kimi Code / Kimi Work subscriptions under the kimi-for-coding model id; the Kimi open-platform pricing page does not list a standalone per-token API rate for it.",
+    note: "Costs remain uncalculated until Moonshot publishes a standalone per-token API rate; do not infer this model price without a verified official rate."
   }),
   officialRate({
     provider: "Qwen",

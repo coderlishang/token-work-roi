@@ -13,7 +13,9 @@ import {
   listTokenEvents,
   listWorkItems,
   openDb,
+  repairStoredCosts,
   repairUsageTotals,
+  storedCostsNeedRepair,
   upsertDaily,
   upsertAdvisorAction,
   upsertBudgetProfile,
@@ -23,6 +25,7 @@ import {
   upsertWorkItem
 } from '../src/db.ts';
 import { buildTerminalReport } from '../src/terminal-report.ts';
+import { calculateCost } from '../src/pricing.ts';
 
 function tempDb() {
   const dir = mkdtempSync(join(tmpdir(), 'token-work-roi-'));
@@ -391,4 +394,80 @@ test('advisor actions upsert by period and source rule', () => {
   assert.equal(listAdvisorActions(db, { periodStart: '2026-06-01', periodEnd: '2026-06-07' }).length, 1);
   assert.equal(deleteAdvisorAction(db, { id: updated.id }), 1);
   db.close();
+});
+
+test('stored cost repair reprices stale rows by current official rates', () => {
+  const db = tempDb();
+  try {
+    // 已定价模型:落库时价为 0(如价目后补的 ccusage 导入行),应按当前价目重算
+    upsertDaily(db, {
+      device: 'dev1', source: 'Claude Code', usageDate: '2026-05-06', model: 'doubao-seed-2-0-code',
+      inputTokens: 720788, outputTokens: 7466, cacheReadTokens: 1572504, costUSD: 0
+    });
+    upsertSession(db, {
+      device: 'dev1', source: 'Claude Code', sessionId: 'import:2026-05-06', lastActivity: '2026-05-06T00:00:00.000Z',
+      model: 'doubao-seed-2-0-code', inputTokens: 720788, outputTokens: 7466, cacheReadTokens: 1572504, costUSD: 0
+    });
+    // 未定价模型保持写入值,不得被清零或改写
+    upsertDaily(db, {
+      device: 'dev1', source: 'Codex CLI', usageDate: '2026-05-11', model: 'gpt-5.4-mini',
+      inputTokens: 4396955, outputTokens: 100407, cacheReadTokens: 39721088, costUSD: 0.123
+    });
+    assert.equal(usageTotalsNeedRepair(db), false);
+    assert.equal(storedCostsNeedRepair(db), true);
+    const result = repairStoredCosts(db);
+    assert.deepEqual(result, { daily: 1, sessions: 1 });
+    const dailyCost = db.prepare(`SELECT cost_usd FROM daily_usage WHERE model='doubao-seed-2-0-code'`).get().cost_usd;
+    const sessionCost = db.prepare(`SELECT cost_usd FROM session_usage WHERE model='doubao-seed-2-0-code'`).get().cost_usd;
+    const expected = calculateCost('doubao-seed-2-0-code', {
+      input: 720788, output: 7466, cacheRead: 1572504, cacheWrite: 0, reasoning: 0
+    }, null, null, '2026-05-06');
+    assert.equal(dailyCost, expected);
+    assert.equal(sessionCost, expected);
+    assert.equal(db.prepare(`SELECT cost_usd FROM daily_usage WHERE model='gpt-5.4-mini'`).get().cost_usd, 0.123);
+    // 重跑幂等
+    assert.equal(storedCostsNeedRepair(db), false);
+    assert.deepEqual(repairStoredCosts(db), { daily: 0, sessions: 0 });
+  } finally { db.close(); }
+});
+
+test('stored cost repair reprices event-backed sessions per event date and model', () => {
+  const db = tempDb();
+  try {
+    // 跨 glm-5.3-flash 调价日(2026-09-18)的事件:重算须逐 (本地日期, 模型) 复现
+    const events = [
+      { timestamp: '2026-09-17T10:00:00.000Z', model: 'glm-5.3-flash', input: 1000, output: 200, cacheRead: 5000 },
+      { timestamp: '2026-09-19T10:00:00.000Z', model: 'glm-5.3-flash', input: 3000, output: 400, cacheRead: 7000 },
+      { timestamp: '2026-09-19T11:00:00.000Z', model: 'deepseek-v4-1-flash', input: 800, output: 100, cacheRead: 900 }
+    ];
+    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, reasoning = 0, cost = 0;
+    const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' });
+    events.forEach((event, index) => {
+      upsertTokenEvent(db, {
+        device: 'dev1', source: 'Claude Code', sessionId: 'sess-mixed', eventId: `ev-${index}`,
+        timestamp: event.timestamp, model: event.model,
+        inputTokens: event.input, outputTokens: event.output, cacheReadTokens: event.cacheRead
+      });
+      input += event.input; output += event.output; cacheRead += event.cacheRead;
+      cost += calculateCost(event.model, {
+        input: event.input, output: event.output, cacheRead: event.cacheRead, cacheWrite: 0, reasoning: 0
+      }, null, null, fmt.format(new Date(event.timestamp)));
+    });
+    upsertSession(db, {
+      device: 'dev1', source: 'Claude Code', sessionId: 'sess-mixed', lastActivity: events[events.length - 1].timestamp,
+      model: 'glm-5.3-flash', inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, costUSD: cost
+    });
+    // 逐事件复现值与存储一致 → 不改写
+    assert.equal(storedCostsNeedRepair(db), false);
+    // 写入坏值后修复,须精确回到逐事件值(单日期粗算会偏离,以此保证测试判别力)
+    db.prepare(`UPDATE session_usage SET cost_usd = 0 WHERE session_id='sess-mixed'`).run();
+    assert.equal(storedCostsNeedRepair(db), true);
+    assert.deepEqual(repairStoredCosts(db), { daily: 0, sessions: 1 });
+    const repaired = db.prepare(`SELECT cost_usd FROM session_usage WHERE session_id='sess-mixed'`).get().cost_usd;
+    assert.equal(repaired, cost);
+    const naive = calculateCost('glm-5.3-flash', {
+      input, output, cacheRead, cacheWrite: 0, reasoning: 0
+    }, null, null, '2026-09-19');
+    assert.notEqual(naive, cost);
+  } finally { db.close(); }
 });
