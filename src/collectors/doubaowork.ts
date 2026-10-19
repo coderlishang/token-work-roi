@@ -27,14 +27,15 @@ import { localDateFromTimestamp, normalizeModelForGrouping } from './utils.ts';
 
 export const CLIENT_KEY = 'doubaowork';
 export const SOURCE_LABEL = 'DoubaoWork';
+// 取不到 model_item_key 时按此模型归属(用户确认该来源一直只用它),换模型时同步修改。
+export const DOUBAOWORK_MODEL = 'doubao-seed-2.1-lite';
 
 const USAGE_FIELD = 'context_window_usage';
 const CONTEXT_FIELDS = ['system_prompt', 'messages', 'skills', 'tools'];
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
 const REPLY_LOOKBACK_BYTES = 12_000;
-// chat_id/tag 紧挨回复锚点,但 model_item_key 实测在 3-8KB 外(记录本身数十 KB);
-// 记录之间相隔更远,±8KB 窗口配合"取最近匹配"不会串到相邻记录。
-const FIELD_WINDOW_BYTES = 8_000;
+// model_item_key 实测在锚点前后 4-30KB 处(配置块内),窗口按最远观测值留余量。
+const FIELD_WINDOW_BYTES = 33_000;
 
 // 消息记录滚动清理后源里只剩最近快照:只声明事件 id 前缀、不开 reconcileIncrementally,
 // 让 collect.ts 从 token_events 重建聚合,且永不删除已从源里消失的历史事件。
@@ -84,6 +85,10 @@ async function readLevelDbUsage(rootPaths) {
     }
   }
   const events = [...eventsByReply.values()];
+  // 副本复用后仍取不到模型的记录按来源模型归属,不落 unknown。
+  for (const event of events) {
+    if (isFallbackModel(event.model)) event.model = DOUBAOWORK_MODEL;
+  }
   audit.usableTokenRecords = events.length;
   return { events, audit };
 }
@@ -178,8 +183,8 @@ function parseUsageHit(text, index, mtimeMs, audit) {
   // 裸形态分隔是 `":` + 长度前缀控制字节(如 \fseed-lite-7b / \x019),转义形态是 `\":\"`。
   // 字段名有 snake_case(model_item_key)与 camelCase(modelItemKey)两种形态。
   const modelKey = nearestMatch(win, anchorInWin, /model_?[Ii]tem_?[Kk]ey[\s\\":\x00-\x1f]+([^\s\\",}]+)/g)?.[1] || null;
-  const modelId = nearestMatch(win, anchorInWin, /model_id[^0-9]{0,4}(\d{1,4})/g)?.[1] || null;
-  const model = normalizeModelForGrouping(modelKey || (modelId ? `model-id-${modelId}` : ''));
+  // model_id 是请求级枚举(实测恒为 38),不是模型标识,不能拿它拼模型名。
+  const model = normalizeModelForGrouping(modelKey || '');
 
   return {
     replyKey,
@@ -283,7 +288,7 @@ function buildOutput(events, pricingData, audit) {
 }
 
 function isFallbackModel(model) {
-  return !model || model === 'unknown' || /^model-id-\d+$/.test(model);
+  return !model || model === 'unknown';
 }
 
 function nearestMatch(win, anchorInWin, regex) {

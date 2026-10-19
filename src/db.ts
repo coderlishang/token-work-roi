@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:f
 import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { configuredClaudeRequestModel } from './claude-settings.ts';
+import { DOUBAOWORK_MODEL } from './collectors/doubaowork.ts';
 import { canonicalModelName, localDateFromTimestamp } from './collectors/utils.ts';
 import { calculateCost, resolveOfficialPricing } from './pricing.ts';
 
@@ -55,6 +56,7 @@ export function openDb(dbPath = defaultDbPath) {
   initSchema(db);
   repairModelNames(db, dbPath);
   repairArkAutoModelNames(db, dbPath);
+  repairDoubaoWorkModelNames(db, dbPath);
   return db;
 }
 
@@ -2106,4 +2108,44 @@ export function repairStoredCosts(db) {
   for (const repair of repairs.daily) updateDaily.run(repair.cost, repair.id);
   for (const repair of repairs.sessions) updateSession.run(repair.cost, repair.id);
   return { daily: repairs.daily.length, sessions: repairs.sessions.length };
+}
+
+// 旧采集器取不到 model_item_key 时用请求级 model_id 拼出 model-id-<n>;源记录已被 App
+// 滚动清理无法回溯,按采集器现在的口径改判为来源模型。
+function repairDoubaoWorkModelNames(db, dbPath) {
+  const staleModels = db.prepare(`
+    SELECT model FROM daily_usage WHERE source = 'DoubaoWork' AND (model LIKE 'model-id-%' OR model = 'unknown')
+    UNION SELECT model FROM session_usage WHERE source = 'DoubaoWork' AND (model LIKE 'model-id-%' OR model = 'unknown')
+    UNION SELECT model FROM token_events WHERE source = 'DoubaoWork' AND (model LIKE 'model-id-%' OR model = 'unknown')
+  `).all().map(row => row.model);
+  if (!staleModels.length) return;
+
+  createSqliteBackup(db, dbPath, { reason: 'doubaowork-model-repair' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const counters = ['input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens',
+      'cached_input_tokens', 'reasoning_output_tokens', 'total_tokens', 'cost_usd'];
+    // daily 主键含 model,同日期多半已有该模型的行,按 repairModelNames 的口径合并累加。
+    const mergeDaily = db.prepare(`
+      INSERT INTO daily_usage (device, source, usage_date, model, ${counters.join(',')}, updated_at)
+      SELECT device, source, usage_date, '${DOUBAOWORK_MODEL}', ${counters.join(',')}, updated_at
+      FROM daily_usage WHERE source = 'DoubaoWork' AND model = ?
+      ON CONFLICT(device, source, usage_date, model) DO UPDATE SET
+        ${counters.map(column => `${column} = daily_usage.${column} + excluded.${column}`).join(',')},
+        updated_at = MAX(daily_usage.updated_at, excluded.updated_at)
+    `);
+    const deleteDaily = db.prepare(`DELETE FROM daily_usage WHERE source = 'DoubaoWork' AND model = ?`);
+    const renameSession = db.prepare(`UPDATE session_usage SET model = '${DOUBAOWORK_MODEL}' WHERE source = 'DoubaoWork' AND model = ?`);
+    const renameEvent = db.prepare(`UPDATE token_events SET model = '${DOUBAOWORK_MODEL}' WHERE source = 'DoubaoWork' AND model = ?`);
+    for (const model of staleModels) {
+      mergeDaily.run(model);
+      deleteDaily.run(model);
+      renameSession.run(model);
+      renameEvent.run(model);
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }

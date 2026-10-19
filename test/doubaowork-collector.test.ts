@@ -124,8 +124,8 @@ test('inherits the model from an earlier copy when the latest one drops it', asy
   const { root, db } = fixtureRoot();
   writeRecords(db, '000010.log', [
     encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, model: '9', tag: TAG, usage: { system_prompt: 100, messages: 200, skills: 0, tools: 0 } }),
-    // 垫过窗口间隔,让最新副本丢失 model_item_key 且够不到上一副本的模型字段。
-    '\x00'.repeat(10000),
+    // 垫过 ±33KB 窗口,让最新副本丢失 model_item_key 且够不到上一副本的模型字段。
+    '\x00'.repeat(40000),
     encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, tag: TAG, usage: { system_prompt: 1000, messages: 2000, skills: 0, tools: 0 } })
   ]);
   try {
@@ -174,11 +174,11 @@ test('scans ldb and log files and ignores non-leveldb entries', async () => {
   }
 });
 
-test('falls back to model id then unknown, and to file mtime without a section tag', async () => {
+test('attributes key-less records to the source model, and falls back to file mtime without a section tag', async () => {
   const { root, db } = fixtureRoot();
   const stamp = new Date('2026-10-13T06:30:00.000Z');
   const file = join(db, '000010.log');
-  // 记录间垫上间隔字节(超过 ±8KB 窗口),模拟独立记录互不落入彼此窗口。
+  // 只有请求级 model_id 时按来源模型归属,不落 unknown。
   writeRecords(db, '000010.log', [
     encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, modelId: '38', usage: { system_prompt: 10, messages: 20, skills: 0, tools: 0 } }),
     '\x00'.repeat(10000),
@@ -187,10 +187,33 @@ test('falls back to model id then unknown, and to file mtime without a section t
   utimesSync(file, stamp, stamp);
   try {
     const result = await collectFromRoots([db]);
-    assert.equal(result.tokenEvents[0].model, 'model-id-38');
-    assert.equal(result.tokenEvents[1].model, 'unknown');
+    assert.equal(result.tokenEvents[0].model, 'doubao-seed-2.1-lite');
+    assert.equal(result.tokenEvents[1].model, 'doubao-seed-2.1-lite');
     assert.equal(result.tokenEvents[0].timestamp, stamp.toISOString());
     assert.equal(result.tokenEvents[1].timestamp, stamp.toISOString());
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('finds the model key far from the anchor within the widened window', async () => {
+  const { root, db } = fixtureRoot();
+  // model_item_key 距锚点 10KB,旧 ±8KB 窗口取不到,会退化成拼造模型名。
+  const record = [
+    `chat_id\x12\x00${CHAT_A}`,
+    `reply_unique_key\x12\x01${REPLY_A}`,
+    '\x00'.repeat(10000),
+    `model_item_key":\x0cseed-lite-7b"`,
+    `section_tag_1h\x12\x02${TAG}`,
+    `context_window_usage\x12\x03${JSON.stringify(USAGE_A)}`
+  ].join('\x00\x01');
+  writeRecords(db, '000010.log', [record]);
+  try {
+    const result = await collectFromRoots([db]);
+    assert.equal(result.tokenEvents.length, 1);
+    assert.equal(result.tokenEvents[0].model, 'doubao-seed-2.1-lite');
+    assert.equal(result.tokenEvents[0].sessionId, CHAT_A);
+    assert.equal(result.tokenEvents[0].inputTokens, 8301 + 11176 + 5908 + 27368);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

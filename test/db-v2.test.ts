@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import test from 'node:test';
 import {
@@ -61,6 +61,36 @@ test('GLM history repair preserves identities and counters across reopen and rep
       { device: 'test', source: 'WorkBuddy', usageDate: '2026-09-05', model: 'glm-5.3-flash', inputTokens: 50 }
     ]);
     assert.equal(db.prepare("SELECT total_tokens FROM daily_usage WHERE device='test'").get().total_tokens, 350);
+  });
+});
+
+test('DoubaoWork fabricated and unknown model names move to the source model on reopen', () => {
+  withDb((db, dbPath) => {
+    upsertDailyBatch(db, [
+      { device: 'dev1', source: 'DoubaoWork', usageDate: '2026-10-19', model: 'model-id-38', inputTokens: 171996 },
+      { device: 'dev1', source: 'DoubaoWork', usageDate: '2026-10-19', model: 'doubao-seed-2.1-lite', inputTokens: 100 }
+    ]);
+    upsertSession(db, { device: 'dev1', source: 'DoubaoWork', sessionId: 'chat-1', model: 'model-id-38', inputTokens: 171996 });
+    upsertTokenEvent(db, { device: 'dev1', source: 'DoubaoWork', sessionId: 'chat-1', eventId: 'ev-1', timestamp: '2026-10-19T14:00:00Z', model: 'model-id-38', inputTokens: 171996 });
+    // 其它来源的同形名字不是本采集器产生的,不得改写。
+    upsertTokenEvent(db, { device: 'dev1', source: 'WorkBuddy', sessionId: 's2', eventId: 'ev-2', timestamp: '2026-10-19T14:00:00Z', model: 'model-id-38', inputTokens: 5 });
+    upsertTokenEvent(db, { device: 'dev1', source: 'WorkBuddy', sessionId: 's3', eventId: 'ev-3', timestamp: '2026-10-19T14:00:00Z', model: 'unknown', inputTokens: 7 });
+    for (let i = 0; i < 2; i++) {
+      const reopened = openDb(dbPath);
+      try {
+        assert.equal(reopened.prepare(`SELECT count(*) AS n FROM token_events WHERE source='DoubaoWork' AND (model LIKE 'model-id-%' OR model='unknown')`).get().n, 0);
+        assert.equal(reopened.prepare(`SELECT model FROM session_usage WHERE source='DoubaoWork' AND session_id='chat-1'`).get().model, 'doubao-seed-2.1-lite');
+        // daily 主键含 model,改判与同日期已有的该模型行合并累加。
+        assert.deepEqual(
+          reopened.prepare(`SELECT model, input_tokens FROM daily_usage WHERE source='DoubaoWork' ORDER BY model`).all().map(row => ({ ...row })),
+          [{ model: 'doubao-seed-2.1-lite', input_tokens: 172096 }]
+        );
+        assert.equal(reopened.prepare(`SELECT model FROM token_events WHERE event_id='ev-2'`).get().model, 'model-id-38');
+        assert.equal(reopened.prepare(`SELECT model FROM token_events WHERE event_id='ev-3'`).get().model, 'unknown');
+      } finally { reopened.close(); }
+    }
+    // 无实际变更时不重复备份。
+    assert.equal(readdirSync(join(dirname(dbPath), 'backups')).filter(name => name.includes('doubaowork-model-repair')).length, 1);
   });
 });
 
