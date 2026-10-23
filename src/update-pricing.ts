@@ -48,7 +48,7 @@ const STABLE_ALIASES = new Map([
   ['openai::gpt-image-2-5-sunburst', ['gpt-image-2.5-sunburst', 'gpt-image-2-5-sunburst']],
   ['openai::gpt-image-2-5-flare', ['gpt-image-2.5-flare', 'gpt-image-2-5-flare']],
   ['deepseek::deepseek-v4-flash', ['deepseek-v4-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-flash-vision-exp', 'deepseek-chat', 'deepseek-reasoner']],
-  ['deepseek::deepseek-flash', ['deepseek-flash', 'deepseek-v4.1-flash', 'deepseek-v4-1-flash']],
+  ['deepseek::deepseek-flash', ['deepseek-flash', 'deepseek-v4.1-flash', 'deepseek-v4-1-flash', 'deepseek-v4.1-flash-economy', 'deepseek-v4-1-flash-economy']],
   ['minimax::minimax-m3', ['minimax-m3', 'minimax-m-3']],
   ['xai::grok-4-6', ['grok-4.6', 'grok-4-6']],
   ['xai::grok-4-5', ['grok-4.5', 'grok-4-5']],
@@ -510,6 +510,7 @@ function parseSourceModels(source, body, exchangeRate) {
   if (source.provider === 'Kimi') return parseKimiModels(body, exchangeRate);
   if (isQwenSource(source)) return parseQwenModels(body, exchangeRate);
   if (isTencentHunyuanSource(source)) return parseTencentHunyuanModels(body, exchangeRate);
+  if (isMiniMaxSource(source)) return parseMiniMaxModels(body, exchangeRate);
   return [];
 }
 
@@ -528,7 +529,8 @@ function sourceHasPricingParser(source) {
     || source.provider === 'Gemini'
     || source.provider === 'Kimi'
     || isQwenSource(source)
-    || isTencentHunyuanSource(source);
+    || isTencentHunyuanSource(source)
+    || isMiniMaxSource(source);
 }
 
 function parseOpenAiGpt6AstraModel(body) {
@@ -1277,6 +1279,27 @@ function isOpenAiGpt6AstraSource(source) {
 
 function isOpenAiGpt6SolLunaSource(source) {
   return providerKey(source?.provider) === 'openai gpt 6 sol luna';
+}
+
+// MiniMax 官方价目页是静态 HTML 表格，M3.1-Flash 行依次为输入 / 输出 / 缓存读取的 CNY 每百万 tokens 价。
+function isMiniMaxSource(source) {
+  return providerKey(source?.provider) === 'minimax';
+}
+
+function parseMiniMaxModels(body, exchangeRate) {
+  const row = body.match(/MiniMax-M3\.1-Flash<\/strong><\/td>\s*<td[^>]*>([\d.]+)<\/td>\s*<td[^>]*>([\d.]+)<\/td>\s*<td[^>]*>([\d.]+)<\/td>/i);
+  if (!row) return [];
+  const [input, output, cachedInput] = row.slice(1).map(Number);
+  if (![input, output, cachedInput].every(value => Number.isFinite(value) && value >= 0)) return [];
+  const rates = cnyToUsdRates({ input, output, cachedInput, cacheWrite5m: input, cacheWrite1h: input }, exchangeRate);
+  if (!rates) return [];
+  return [rateModel('MiniMax', 'minimax-m3.1-flash', rates, 'MiniMax', 'official-page', {
+    currency: 'CNY',
+    unit: '1M tokens',
+    ratesPerMTok: { input, output, cachedInput, cacheWrite5m: input, cacheWrite1h: input },
+    exchangeRate: exchangeRate.rate,
+    sourceUnit: '元 / 1M tokens'
+  })];
 }
 
 function isOpenAiGpt61SolSource(source) {

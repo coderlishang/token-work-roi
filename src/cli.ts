@@ -359,7 +359,8 @@ async function collectCommand() {
     '--sources',
     sources
   ];
-  if (args.db) collectArgs.push('--db', args.db);
+  // 子进程 cwd 固定在包根，DB 必须按用户 cwd 解析后传绝对路径，否则写到包内 data/
+  collectArgs.push('--db', cliDbPath());
   if (args.json) collectArgs.push('--json');
   if (args.apply && (args.yes || process.env.TOKEN_WORK_COLLECT_CONFIRMED === '1')) {
     collectArgs.push('--yes');
@@ -837,7 +838,7 @@ function runCollectDryRun({ sources, dbPath }: { sources?: string; dbPath?: stri
     sources || `${LIVE_COLLECT_SOURCES},cursor`,
     '--json'
   ];
-  if (dbPath) collectArgs.push('--db', dbPath);
+  collectArgs.push('--db', dbPath ? resolve(USER_CWD, dbPath) : cliDbPath());
   return new Promise((resolveRun, rejectRun) => {
     const child = spawn(process.execPath, collectArgs, {
       cwd: PACKAGE_ROOT,

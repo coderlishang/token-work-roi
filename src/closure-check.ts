@@ -14,8 +14,9 @@ import {
   listProjectAliasRules,
   matchProjectAliasRule
 } from './db.ts';
-import { attachOfficialPricing } from './pricing.ts';
+import { attachOfficialPricing, attachSessionPricing } from './pricing.ts';
 import { providerFromSource } from './provider.ts';
+import { localDateFromTimestamp } from './collectors/utils.ts';
 import { buildReviewClosureProgress } from './client/review/closure-progress.ts';
 import { buildRoiAdvisor } from './client/review/roi-advisor.ts';
 import type { UsageRow } from './client/shared/types.ts';
@@ -403,11 +404,11 @@ function loadSessionRows(db) {
       : (row.sessionId ? row.sessionId.split('/').slice(-1)[0] || row.sessionId : null);
     const ruleProjectAlias = matchProjectAliasRule(projectPath, aliasRules);
     const model = row.model || modelFromSessionId(row.sessionId);
-    return attachOfficialPricing({
+    return attachSessionPricing({
       ...row,
       ...DEFAULT_SESSION_ANNOTATION,
       model,
-      lastActivity: row.lastActivity ? String(row.lastActivity).slice(0, 10) : null,
+      lastActivity: row.lastActivity ? localDateFromTimestamp(row.lastActivity, null) : null,
       projectPath,
       projectAlias: row.manualProjectAlias || ruleProjectAlias || null,
       manualProjectAlias: row.manualProjectAlias || null,
@@ -421,7 +422,8 @@ function loadSessionRows(db) {
       outputUrl: row.outputUrl || null,
       outputLabel: row.outputLabel || null,
       outputType: row.outputType || DEFAULT_SESSION_ANNOTATION.outputType
-    }, model, providerFromSource(row.source));
+    }, model, providerFromSource(row.source), null,
+    row.lastActivity ? localDateFromTimestamp(row.lastActivity, null) : null);
   });
 }
 

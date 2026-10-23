@@ -82,6 +82,22 @@ test('sessions without rollout files keep their workspace from the CLI session t
   }
 });
 
+test('full scans never declare event deletion because rollouts rotate', async () => {
+  const { root, rollout } = fixtureRoot();
+  writeFileSync(join(rollout, 'model-io-sess_fixture.jsonl'), modelIoLine());
+  try {
+    // 真实 rollout 文件会被滚动截断(当前文件只剩最近数小时),本次未解析到不代表请求被删除
+    const full = await collectFromRoots([rollout]);
+    // 只声明前缀：出现任何按缺失删除的字段都意味着滚动截断会丢历史
+    assert.deepEqual(Object.keys(full.reconciliation), ['managedEventIdPrefix']);
+    assert.equal(full.reconciliation.managedEventIdPrefix, 'zcode:');
+    const incremental = await collectFromRoots([rollout], null, { changedAfterMs: Date.now() - 120_000 });
+    assert.deepEqual(Object.keys(incremental.reconciliation), ['managedEventIdPrefix']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('stable event ids keep repeated full collects idempotent', async () => {
   const { root, rollout } = fixtureRoot();
   writeFileSync(join(rollout, 'model-io-sess_fixture.jsonl'), modelIoLine());

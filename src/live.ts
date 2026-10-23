@@ -1,3 +1,4 @@
+import { localDateFromTimestamp } from './collectors/utils.ts';
 import { calculateOfficialCost, resolveOfficialPricing, type PricingData } from './pricing.ts';
 import { providerFromSource } from './provider.ts';
 
@@ -666,7 +667,8 @@ function normalizeSession(session, pricingData) {
     cacheRead: cacheReadTokens,
     cacheWrite: cacheCreationTokens,
     reasoning: reasoningTokens
-  }, totalTokens, providerFromSource(session.source), pricingData);
+  }, totalTokens, providerFromSource(session.source), pricingData,
+  lastActivity ? localDateFromTimestamp(lastActivity, null) : null);
   return {
     device: session.device || '',
     source: session.source || 'unknown',
@@ -685,10 +687,10 @@ function normalizeSession(session, pricingData) {
   };
 }
 
-function calculateLiveCost(model, tokens, totalTokens, provider, pricingData) {
+function calculateLiveCost(model, tokens, totalTokens, provider, pricingData, usageDate = null) {
   const hasBreakdown = Object.values(tokens).some(value => number(value) > 0);
   const effectiveTokens = hasBreakdown ? tokens : { input: totalTokens };
-  return calculateOfficialCost(model, effectiveTokens, { provider, pricingData }).totalUSD;
+  return calculateOfficialCost(model, effectiveTokens, { provider, pricingData, usageDate }).totalUSD;
 }
 
 function normalizeEvent(event, pricingData) {
@@ -706,7 +708,12 @@ function normalizeEvent(event, pricingData) {
       cacheRead: cacheReadTokens,
       cacheWrite: cacheCreationTokens,
       reasoning: reasoningTokens
-    }, { provider: providerFromSource(event.source), pricingData }).totalUSD;
+    }, {
+      provider: providerFromSource(event.source),
+      pricingData,
+      // 仅有时间表档的模型（如 gpt-5.4-mini）必须按事件本地日期取档,否则窗口成本恒为 0
+      usageDate: localDateFromTimestamp(timestamp, null)
+    }).totalUSD;
   return {
     eventId: event.eventId || event.event_id || null,
     device: event.device || '',

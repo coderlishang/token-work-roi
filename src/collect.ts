@@ -56,7 +56,7 @@ async function main() {
 
   const device = args.device || hostname();
   const collectedAt = new Date().toISOString();
-  const pricingCachePath = resolve(process.cwd(), 'data', 'official-pricing.json');
+  const pricingCachePath = process.env.TOKEN_WORK_PRICING_CACHE || resolve(process.cwd(), 'data', 'official-pricing.json');
   const pricingData = await loadPricing(pricingCachePath);
   const enabled = enabledCollectors(args);
   const scheduled = isScheduledCollection();
@@ -369,7 +369,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
   }
 
   const needsStoredUsageRepair = mode === 'apply' && db && usageTotalsNeedRepair(db);
-  const needsStoredCostsRepair = mode === 'apply' && db && storedCostsNeedRepair(db);
+  const needsStoredCostsRepair = mode === 'apply' && db && storedCostsNeedRepair(db, pricingData);
   const needsCodexAccountingUpgrade = mode === 'apply' && db
     && payloads.some(payload => payload.type === 'data' && payload.sourceSummary.id === 'codex')
     && codexAccountingUpgradeNeeded(db);
@@ -430,7 +430,7 @@ async function collectLocal({ collectors, mode, db, dbPath, pricingData, device,
     runInTransaction(db, () => repairUsageTotals(db));
   }
   if (needsStoredCostsRepair) {
-    runInTransaction(db, () => repairStoredCosts(db));
+    runInTransaction(db, () => repairStoredCosts(db, pricingData));
   }
 
   for (const payload of payloads) {
@@ -1481,7 +1481,7 @@ function rebuildIncrementalEventUsage(db, payload, source, pricingData) {
   const eventSessionIds = new Set();
 
   const addEvent = ({ sessionId, usageDate, lastActivity, model, tokens, projectPath = null }) => {
-    const sessionKey = ['workbuddy', 'codebuddy', 'deepseek-harness', 'zcode'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
+    const sessionKey = ['workbuddy', 'codebuddy', 'deepseek-harness', 'zcode', 'doubaowork'].includes(payload.sourceSummary.id) ? sessionId : `${sessionId}::${model}`;
     eventSessionIds.add(sessionId);
     const session = sessions.get(sessionKey) || usageRow({
       device: payload.device, source, sessionId,

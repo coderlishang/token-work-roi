@@ -127,7 +127,7 @@ test('v2 APIs cover alias rules, batch annotations, outputs, backup, export and 
       sessionAnnotations: 2,
       sessionOutputs: 1,
       projectAliasRules: 1,
-      skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
+      skipped: { sessionAnnotations: 0, sessionOutputs: 0, projectAliasRules: 0 }
     });
     assert.equal(existsSync(imported.backup.path), true);
     assert.equal(existsSync(backup.backup.path), false);
@@ -139,7 +139,7 @@ test('v2 APIs cover alias rules, batch annotations, outputs, backup, export and 
       sessionAnnotations: 0,
       sessionOutputs: 0,
       projectAliasRules: 0,
-      skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
+      skipped: { sessionAnnotations: 0, sessionOutputs: 0, projectAliasRules: 0 }
     });
 
     const deletedOutput = await deleteJson(port, '/api/session-outputs', {

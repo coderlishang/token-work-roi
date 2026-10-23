@@ -6,10 +6,12 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
 import {
   attachOfficialPricing,
+  attachSessionPricing,
   loadPricing,
   officialPricingMetadata
 } from './pricing.ts';
 import { providerFromSource } from './provider.ts';
+import { localDateFromTimestamp } from './collectors/utils.ts';
 import {
   AUTO_ATTRIBUTION_THRESHOLD,
   buildAutoAttributionPlan
@@ -265,7 +267,7 @@ async function handleApi(req, url, res) {
       runs: all(`
         SELECT device, source, status, message, collected_at AS collectedAt
         FROM collection_runs
-        ORDER BY id DESC
+        ORDER BY collected_at DESC, id DESC
         LIMIT 20
       `)
     });
@@ -323,7 +325,7 @@ async function handleApi(req, url, res) {
       SELECT id, device, source, status, message,
         collected_at AS collectedAt
       FROM collection_runs
-      ORDER BY id DESC
+      ORDER BY collected_at DESC, id DESC
       LIMIT 1000
     `);
 
@@ -339,7 +341,7 @@ async function handleApi(req, url, res) {
         ...s,
         ...DEFAULT_SESSION_ANNOTATION,
         model,
-        lastActivity: s.lastActivity ? String(s.lastActivity).slice(0, 10) : null,
+        lastActivity: s.lastActivity ? localDateFromTimestamp(s.lastActivity, null) : null,
         source: s.source,
         projectPath,
         projectAlias: manualProjectAlias || ruleProjectAlias || null,
@@ -399,11 +401,14 @@ async function handleApi(req, url, res) {
       ...d,
       projectPath: projMap.get(`${d.device}::${d.source}`)?.project || null
     }, d.model, providerFromSource(d.source), pricingData, d.usageDate == null ? null : String(d.usageDate)));
-    const pricedSessions = sessions.map(s => attachOfficialPricing(
+    const pricedSessions = sessions.map(s => attachSessionPricing(
       s,
       s.model,
       providerFromSource(s.source),
-      pricingData
+      pricingData,
+      // 有落库成本时保留逐事件累加值;无落库成本时按最后活动日取价目档
+      // (gpt-5.4-mini 等仅有时间表的模型不再按 0 计)
+      s.lastActivity || null
     ));
 
     const workItems = listWorkItems(db);
@@ -599,7 +604,7 @@ async function handleApi(req, url, res) {
       runs: all(`
         SELECT device, source, status, message, collected_at AS collectedAt
         FROM collection_runs
-        ORDER BY id DESC
+        ORDER BY collected_at DESC, id DESC
         LIMIT 5
       `),
       windowMinutes,
@@ -1333,7 +1338,8 @@ async function handleIngest(req, res) {
       row,
       row.model,
       providerFromSource(row.source),
-      pricingData
+      pricingData,
+      row.lastActivity ? localDateFromTimestamp(row.lastActivity, null) : null
     ));
 
     db.exec('BEGIN');
@@ -1448,7 +1454,13 @@ function buildLocalTrustPayload() {
       cost_usd AS costUSD
     FROM daily_usage
     ORDER BY usage_date DESC
-  `).map(row => attachOfficialPricing(row, row.model, providerFromSource(row.source)));
+  `).map(row => attachOfficialPricing(
+    row,
+    row.model,
+    providerFromSource(row.source),
+    null,
+    row.usageDate == null ? null : String(row.usageDate)
+  ));
   const runs = all(`
     SELECT id, device, source, status, message, collected_at AS collectedAt
     FROM collection_runs
@@ -1606,7 +1618,7 @@ function latestCollectionRun() {
   const row = one(`
     SELECT source, status, message, collected_at AS collectedAt
     FROM collection_runs
-    ORDER BY id DESC
+    ORDER BY collected_at DESC, id DESC
     LIMIT 1
   `);
   if (!row) return null;
@@ -1879,11 +1891,11 @@ function buildAutoAttributionContext() {
     const projectPath = normalizeProjectPath(s.projectPath, s.sessionId);
     const ruleProjectAlias = matchProjectAliasRule(projectPath, enabledAliasRules);
     const model = s.model || modelFromSessionId(s.sessionId);
-    return attachOfficialPricing({
+    return attachSessionPricing({
       ...s,
       ...DEFAULT_SESSION_ANNOTATION,
       model,
-      lastActivity: s.lastActivity ? String(s.lastActivity).slice(0, 10) : null,
+      lastActivity: s.lastActivity ? localDateFromTimestamp(s.lastActivity, null) : null,
       projectPath,
       projectAlias: s.manualProjectAlias || ruleProjectAlias || null,
       manualProjectAlias: s.manualProjectAlias || null,
@@ -1906,7 +1918,8 @@ function buildAutoAttributionContext() {
       outputLabel: s.outputLabel || null,
       outputType: s.outputType || DEFAULT_SESSION_ANNOTATION.outputType,
       outputUpdatedAt: s.outputUpdatedAt || null
-    }, model, providerFromSource(s.source));
+    }, model, providerFromSource(s.source), null,
+    s.lastActivity ? localDateFromTimestamp(s.lastActivity, null) : null);
   });
   return { sessions, projectAliasRules: aliasRules };
 }
