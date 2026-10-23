@@ -257,6 +257,12 @@ export const OFFICIAL_PRICING_SOURCES = [
       'https://platform.stepfun.com/docs/zh/guides/pricing/details.md'
     ],
     note: 'Official StepFun Open Platform RMB prices converted to USD for internal cost math.'
+  },
+  {
+    provider: 'MiniMax',
+    label: 'MiniMax API pricing',
+    url: 'https://platform.minimaxi.com/document/price',
+    note: 'Official MiniMax API RMB prices converted to USD for internal cost math; standard service tier is used.'
   }
 ];
 
@@ -786,14 +792,14 @@ export const OFFICIAL_PRICE_TABLE = [
   officialRate({
     provider: "deepseek",
     model: "deepseek-flash",
-    aliases: ["deepseek-flash", "deepseek-v4-1-flash"],
+    aliases: ["deepseek-flash", "deepseek-v4-1-flash", "deepseek-v4-1-flash-economy"],
     input: 0.3,
     cachedInput: 0.006,
     cacheWrite5m: 0.3,
     cacheWrite1h: 0.3,
     output: 1.2,
     source: "deepseek",
-    note: "DeepSeek-V4.1-Flash uses the deepseek-flash API name. Peak rates are used because historical collection records do not contain the provider billing window; off-peak rates are half of these values."
+    note: "DeepSeek-V4.1-Flash uses the deepseek-flash API name. Peak rates are used because historical collection records do not contain the provider billing window; off-peak rates are half of these values. deepseek-v4-1-flash-economy is the backend model Ark Coding Plan returns and is estimated at the same V4.1-Flash rate."
   }),
   officialRate({
     provider: "MiniMax",
@@ -1607,6 +1613,19 @@ export const OFFICIAL_PRICE_TABLE = [
     officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":7,"output":20,"cachedInput":0.35,"cacheWrite5m":7,"cacheWrite1h":7},"exchangeRate":6.69274,"sourceUnit":"元 / 1M tokens"},
     source: "StepFun",
     note: "Official StepFun Open Platform RMB rate converted to USD at the last verified refresh rate."
+  }),
+  officialRate({
+    provider: "MiniMax",
+    model: "minimax-m3.1-flash",
+    aliases: ["minimax-m3-1-flash"],
+    input: 0.149415635449756,
+    cachedInput: 0.014941563544975603,
+    cacheWrite5m: 0.149415635449756,
+    cacheWrite1h: 0.149415635449756,
+    output: 0.597662541799024,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":1,"output":4,"cachedInput":0.1,"cacheWrite5m":1,"cacheWrite1h":1},"exchangeRate":6.69274,"sourceUnit":"元 / 1M tokens"},
+    source: "MiniMax",
+    note: "Official MiniMax API standard-tier RMB rate converted to USD; priority service is 1.5x and not applied by default."
   })
 ];
 
@@ -2021,7 +2040,8 @@ function normalizeCachedRate(row: CachedRateInput): OfficialRate {
       output: Number(rates.output)
     } : null,
     officialRatesPerMTok: row.officialRatesPerMTok || null,
-    rateSchedule: Array.isArray(row.rateSchedule) && row.rateSchedule.length ? row.rateSchedule : null,
+    // 缓存是运行时的权威价目，档位同样要排序/剔除残缺项，否则坏档会把历史日期算成未来价
+    rateSchedule: normalizeRateSchedule(row.rateSchedule),
     source: sourceMeta,
     pricingFetchStatus: row.pricingFetchStatus || null,
     note: row.note || sourceMeta?.note || null
@@ -2191,4 +2211,13 @@ function normalizeVersionSeparator(id) {
 
 function normalizeModelSeparators(id) {
   return String(id || '').replace(/[\s_]+/g, '-');
+}
+
+// 会话成本在落库时已按逐事件日期/模型累加；用聚合 tokens 乘最新模型和最后活动日价目
+// 会在多模型会话上高估(实测单会话 10.6 美元算成 194.0)。有落库成本时保留它，
+// 与 live.ts 的 stored-first 口径一致。
+export function attachSessionPricing(row: PricingRow, model = row?.model, provider: string | null = null, pricingData: PricingData | null = null, usageDate: string | null = null) {
+  const priced = attachOfficialPricing(row, model, provider, pricingData, usageDate);
+  const stored = Number(row?.costUSD ?? row?.cost_usd);
+  return Number.isFinite(stored) && stored > 0 ? { ...priced, costUSD: stored } : priced;
 }

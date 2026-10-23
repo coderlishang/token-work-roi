@@ -2556,6 +2556,24 @@ test('collect rebuilds ZCode daily and session totals from every stored event', 
     const fifth = await runNode(args, incremental);
     assert.equal(fifth.code, 0, fifth.stderr);
     assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 }, ['sess_ghost_annotated']);
+
+    // 滚动截断：当前文件只剩最近请求,本次未解析到的历史事件必须保留（实测真实文件只留数小时）
+    writeFileSync(fixture.rolloutA, zcodeLine('req-1', 'sess_a'));
+    const sixth = await runNode(args, fixture.env);
+    assert.equal(sixth.code, 0, sixth.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 }, ['sess_ghost_annotated']);
+
+    // rollout 文件被整体清理同样不等于删除历史：事件与工作区映射保持不变
+    rmSync(fixture.rolloutB, { force: true });
+    const seventh = await runNode(args, fixture.env);
+    assert.equal(seventh.code, 0, seventh.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 }, ['sess_ghost_annotated']);
+
+    // 半行写入/损坏行也不得触发删除
+    writeFileSync(fixture.rolloutA, [zcodeLine('req-1', 'sess_a'), '{"type":"model_io",broken'].join('\n'));
+    const eighth = await runNode(args, fixture.env);
+    assert.equal(eighth.code, 0, eighth.stderr);
+    assertZcodeTotals(fixture.dbPath, { a: 2, b: 2 }, ['sess_ghost_annotated']);
   } finally {
     cleanupFixture(fixture);
   }

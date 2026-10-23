@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 import { calculateCost } from '../pricing.ts';
 import { localDateFromTimestamp, normalizeModelForGrouping } from './utils.ts';
 
@@ -50,7 +50,8 @@ export async function listUsageFiles(roots) {
   for (const root of roots.filter(Boolean)) {
     await walk(root, 0, files);
   }
-  return files;
+  // 配置的根目录可能重叠(父目录+子目录);同一文件只读一次,否则日/会话聚合会按事件数翻倍。
+  return [...new Set(files.map(filePath => resolve(filePath)))];
 }
 
 export async function auditStructuredUsage({ roots }) {

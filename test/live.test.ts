@@ -88,6 +88,35 @@ test('live snapshot prices rows with supplied pricing data instead of the built-
   assert.ok(builtin.warnings.some(warning => warning.type === 'unpriced-model-active'));
 });
 
+test('live snapshot prices events by their local date for schedule-only models', () => {
+  const eventAt = timestamp => ({
+    eventId: `sched-${timestamp}`,
+    device: 'demo',
+    source: 'Codex CLI',
+    sessionId: 's1',
+    timestamp,
+    model: 'gpt-5.4-mini',
+    inputTokens: 1_000_000,
+    outputTokens: 1_000_000
+  });
+  // 北京时间 2026-09-20 10:10,命中 2026-09-18 起的时间表档价(0.2 + 1.25)
+  const priced = buildLiveSnapshot({
+    now: new Date('2026-09-20T02:15:00Z'),
+    windowMinutes: 15,
+    tokenEvents: [eventAt('2026-09-20T02:10:00Z')]
+  });
+  assert.equal(priced.byModel[0].costUSD, 1.45);
+  assert.equal(priced.totals.costUSD, 1.45);
+
+  // 北京时间仍是 2026-09-17,补价前无官方价,不能被当成已定价
+  const unpriced = buildLiveSnapshot({
+    now: new Date('2026-09-17T12:20:00Z'),
+    windowMinutes: 15,
+    tokenEvents: [eventAt('2026-09-17T12:10:00Z')]
+  });
+  assert.equal(unpriced.byModel[0].costUSD, 0);
+});
+
 test('live snapshot builds 24h pulse metrics from event-level rows', () => {
   const snapshot = buildLiveSnapshot({
     now: new Date('2026-06-17T12:00:00Z'),

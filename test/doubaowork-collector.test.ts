@@ -70,7 +70,8 @@ test('parses usage snapshots into input-only token events', async () => {
     assert.equal(first.eventId, `doubaowork:reply:${createHash('sha256').update(REPLY_A).digest('hex').slice(0, 32)}`);
     assert.equal(first.source, 'doubaowork');
     assert.equal(first.sessionId, CHAT_A);
-    assert.equal(first.timestamp, new Date(2026, 9, 13, 22, 0).toISOString());
+    // section_tag 是北京时间:22:00 固定对应 14:00Z,不受运行进程时区影响。
+    assert.equal(first.timestamp, '2026-10-13T14:00:00.000Z');
     // 仓库 modelAliases 把本地 key seed-lite-7b 归一为真实模型名。
     assert.equal(first.model, 'doubao-seed-2.1-lite');
     assert.equal(first.inputTokens, 8301 + 11176 + 5908 + 27368);
@@ -115,6 +116,39 @@ test('dedupes rewritten record copies with the latest usage snapshot', async () 
     assert.equal(result.tokenEvents.length, 1);
     assert.equal(result.tokenEvents[0].inputTokens, 4000);
     assert.equal(result.audit.usableTokenRecords, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('keeps the larger snapshot when a stale smaller copy is written later', async () => {
+  const { root, db } = fixtureRoot();
+  writeRecords(db, '000010.log', [
+    encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, model: 'seed-lite-7b', tag: TAG, usage: { system_prompt: 1000, messages: 2000, skills: 300, tools: 700 } }),
+    encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, model: 'seed-lite-7b', tag: TAG, usage: { system_prompt: 100, messages: 200, skills: 30, tools: 70 }, escaped: true })
+  ]);
+  try {
+    const result = await collectFromRoots([db]);
+    assert.equal(result.tokenEvents.length, 1);
+    assert.equal(result.tokenEvents[0].inputTokens, 4000);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('aggregates one chat that switches models into a single session row', async () => {
+  const { root, db } = fixtureRoot();
+  writeRecords(db, '000010.log', [
+    encodeRecord({ chatId: CHAT_A, replyKey: REPLY_A, model: 'seed-lite-7b', tag: '1_2026101309', usage: { system_prompt: 100, messages: 200, skills: 0, tools: 0 } }),
+    encodeRecord({ chatId: CHAT_A, replyKey: REPLY_B, model: 'seed-lite-pro-7b', tag: '1_2026101310', usage: { system_prompt: 300, messages: 400, skills: 0, tools: 0 } })
+  ]);
+  try {
+    const result = await collectFromRoots([db]);
+    // session_usage 主键只有 session_id,同一会话换模型必须聚成一行,否则后写模型覆盖前一模型用量。
+    assert.equal(result.modelsJson.entries.length, 1);
+    assert.equal(result.modelsJson.entries[0].sessionId, CHAT_A);
+    assert.equal(result.modelsJson.entries[0].input, 1000);
+    assert.equal(result.modelsJson.entries[0].model, result.tokenEvents[1].model);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

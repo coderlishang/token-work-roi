@@ -72,8 +72,9 @@ function zcodeOutput(events, directories, pricingData) {
   return output;
 }
 
-// 事件 id 由 (sessionId, requestId, attempt) 稳定派生，重复采集靠 upsert 幂等；
-// 全量采集时按前缀删除重建，容忍 rollout 文件被清理。
+// 事件 id 由 (sessionId, requestId, attempt) 稳定派生，重复采集靠 upsert 幂等。
+// ZCode 会滚动截断 rollout 文件（实测当前文件只保留最近数小时），"本次未解析到"不等于请求被删除，
+// 因此只声明前缀、不声明按缺失删除；daily/session 始终由全部存储事件重建，历史 token 不会因文件清理丢失。
 function zcodeReconciliation() {
   return { managedEventIdPrefix: `${CLIENT_KEY}:` };
 }
@@ -150,6 +151,11 @@ async function parseRolloutFile(filePath, directories, seenRequests, audit) {
   }
 
   const events = [];
+  // 文件可能在读完后被清理;mtime 只用于补齐缺失的 completedAt,取不到时退回当前时间,不能中断整个来源。
+  let mtimeMs = null;
+  try {
+    mtimeMs = (await stat(filePath)).mtimeMs;
+  } catch {}
   const lines = text.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
@@ -180,7 +186,7 @@ async function parseRolloutFile(filePath, directories, seenRequests, audit) {
 
     const timestamp = typeof record.completedAt === 'string' && record.completedAt
       ? record.completedAt
-      : new Date((await stat(filePath)).mtimeMs).toISOString();
+      : new Date(mtimeMs ?? Date.now()).toISOString();
     const date = localDateFromTimestamp(timestamp);
 
     events.push({

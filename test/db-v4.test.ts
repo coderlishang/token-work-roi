@@ -431,6 +431,32 @@ test('stored cost repair reprices stale rows by current official rates', () => {
   } finally { db.close(); }
 });
 
+test('stored cost repair uses the pricing cache loaded by the collector', () => {
+  const db = tempDb();
+  try {
+    // 运行时以 data/official-pricing.json 为准；修复若用内置表，会把缓存价改回旧价并在两次采集间来回震荡。
+    const pricingData = {
+      models: [{
+        provider: 'MiniMax',
+        model: 'minimax-m3.1-flash',
+        aliases: ['minimax-m3.1-flash'],
+        priced: true,
+        ratesPerMTok: { input: 2, cachedInput: 0.2, cacheWrite5m: 2, cacheWrite1h: 2, output: 8 }
+      }]
+    };
+    const tokens = { input: 1_000_000, output: 1_000_000, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+    const cachedCost = calculateCost('minimax-m3.1-flash', tokens, pricingData, null, '2026-10-01');
+    upsertDaily(db, {
+      device: 'dev1', source: 'Claude Code', usageDate: '2026-10-01', model: 'minimax-m3.1-flash',
+      inputTokens: tokens.input, outputTokens: tokens.output, costUSD: cachedCost
+    });
+    assert.equal(storedCostsNeedRepair(db), true);
+    assert.equal(storedCostsNeedRepair(db, pricingData), false);
+    assert.deepEqual(repairStoredCosts(db, pricingData), { daily: 0, sessions: 0 });
+    assert.equal(db.prepare(`SELECT cost_usd FROM daily_usage`).get().cost_usd, cachedCost);
+  } finally { db.close(); }
+});
+
 test('stored cost repair reprices event-backed sessions per event date and model', () => {
   const db = tempDb();
   try {

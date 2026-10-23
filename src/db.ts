@@ -110,21 +110,23 @@ function repairArkAutoModelNames(db, dbPath) {
   const canonical = configuredClaudeRequestModel() || 'ark-auto';
   const legacyModels = ['auto', 'ark-auto'].filter(model => model !== canonical);
   const legacySuffixes = legacyModels;
+  // canonical 为 ark-auto 时不能把 canonical 行当遗留行统计，否则每次打开都备份并重写日行。
+  const legacyModelList = legacyModels.map(() => '?').join(', ');
 
   const legacyModelCount = db.prepare(`
     SELECT count(*) AS n FROM (
-      SELECT model FROM daily_usage WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
-      UNION ALL SELECT model FROM session_usage WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
-      UNION ALL SELECT model FROM token_events WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
+      SELECT model FROM daily_usage WHERE source = 'Claude Code' AND lower(model) IN (${legacyModelList})
+      UNION ALL SELECT model FROM session_usage WHERE source = 'Claude Code' AND lower(model) IN (${legacyModelList})
+      UNION ALL SELECT model FROM token_events WHERE source = 'Claude Code' AND lower(model) IN (${legacyModelList})
     )
-  `).get().n;
+  `).get(...legacyModels, ...legacyModels, ...legacyModels).n;
   const legacySuffixRows = db.prepare(`
     SELECT event_id, device, session_id, timestamp, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens, privacy_level
     FROM token_events
     WHERE source = 'Claude Code'
       AND (session_id LIKE '%:auto' OR session_id LIKE '%:ark-auto')
-  `).all();
+  `).all().filter(row => legacySuffixes.some(suffix => row.session_id.endsWith(`:${suffix}`)));
   if (!legacyModelCount && !legacySuffixRows.length) return;
 
   const legacySuffixOf = sessionId => sessionId.endsWith(':ark-auto') && legacySuffixes.includes('ark-auto')
@@ -146,12 +148,12 @@ function repairArkAutoModelNames(db, dbPath) {
   const legacySessions = db.prepare(`
     SELECT device, session_id FROM session_usage
     WHERE source = 'Claude Code' AND (session_id LIKE '%:auto' OR session_id LIKE '%:ark-auto')
-  `).all();
+  `).all().filter(row => legacySuffixes.some(suffix => row.session_id.endsWith(`:${suffix}`)));
   // 无实际变更时不备份不开事务；孪生每次实时检查，晚到孪生仍会被下次修复清理。
   const legacyDailyCount = db.prepare(`
     SELECT count(*) AS n FROM daily_usage
-    WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
-  `).get().n;
+    WHERE source = 'Claude Code' AND lower(model) IN (${legacyModelList})
+  `).get(...legacyModels).n;
   const willChange = legacyModelCount > 0
     || legacyDailyCount > 0
     || legacySuffixRows.some(row => canonicalTwin.get(
@@ -241,8 +243,8 @@ function repairArkAutoModelNames(db, dbPath) {
     //    touched by legacy rows, then drop the legacy daily rows.
     for (const row of db.prepare(`
       SELECT DISTINCT usage_date FROM daily_usage
-      WHERE source = 'Claude Code' AND lower(model) IN ('auto', 'ark-auto')
-    `).all()) {
+      WHERE source = 'Claude Code' AND lower(model) IN (${legacyModelList})
+    `).all(...legacyModels)) {
       affectedDates.add(row.usage_date);
     }
     const rebuildDaily = db.prepare(`
@@ -2000,13 +2002,13 @@ const COST_REPAIR_EPSILON = 1e-6;
 // 逐事件累加完全一致，跨调价日/混模型会话不会来回改写）；无事件的行（ccusage
 // 导入等）退回按行聚合 + last_activity 日期单次计算。未定价模型跳过，避免把
 // 免费/未定价行清零；差额小于阈值的行不动，避免浮点抖动反复改写。
-function officialRowCost(model, tokens, usageDate) {
-  const pricing = resolveOfficialPricing(model, null, null, usageDate);
+function officialRowCost(model, tokens, usageDate, pricingData = null) {
+  const pricing = resolveOfficialPricing(model, null, pricingData, usageDate);
   if (!pricing || !pricing.priced) return null;
-  return calculateCost(model, tokens, null, null, usageDate);
+  return calculateCost(model, tokens, pricingData, null, usageDate);
 }
 
-function collectStoredCostRepairs(db) {
+function collectStoredCostRepairs(db, pricingData = null) {
   const repairs = { daily: [], sessions: [] };
 
   for (const row of db.prepare(`
@@ -2021,7 +2023,7 @@ function collectStoredCostRepairs(db) {
       input: row.input, output: row.output,
       cacheRead: row.cacheRead + row.cachedInput,
       cacheWrite: row.cacheWrite, reasoning: row.reasoning
-    }, row.usageDate);
+    }, row.usageDate, pricingData);
     if (cost != null && Math.abs(cost - (row.costUSD || 0)) > COST_REPAIR_EPSILON) {
       repairs.daily.push({ id: row.id, cost });
     }
@@ -2078,7 +2080,12 @@ function collectStoredCostRepairs(db) {
       cost = 0;
       for (const [partKey, part] of bucket.parts) {
         const [usageDate, partModel] = partKey.split('\u0000');
-        cost += calculateCost(partModel, part, null, null, usageDate);
+        // 任一事件模型未定价时整行跳过，避免把已存的非零成本改成部分/零成本
+        if (!resolveOfficialPricing(partModel, null, pricingData, usageDate)?.priced) {
+          cost = null;
+          break;
+        }
+        cost += calculateCost(partModel, part, pricingData, null, usageDate);
       }
     } else {
       const usageDate = row.last_activity ? localDateFromTimestamp(row.last_activity) : null;
@@ -2086,7 +2093,7 @@ function collectStoredCostRepairs(db) {
         input: row.input_tokens, output: row.output_tokens,
         cacheRead: row.cache_read_tokens + row.cached_input_tokens,
         cacheWrite: row.cache_creation_tokens, reasoning: row.reasoning_output_tokens
-      }, usageDate);
+      }, usageDate, pricingData);
     }
     if (cost != null && Math.abs(cost - (row.cost_usd || 0)) > COST_REPAIR_EPSILON) {
       repairs.sessions.push({ id: row.id, cost });
@@ -2096,13 +2103,13 @@ function collectStoredCostRepairs(db) {
   return repairs;
 }
 
-export function storedCostsNeedRepair(db) {
-  const repairs = collectStoredCostRepairs(db);
+export function storedCostsNeedRepair(db, pricingData = null) {
+  const repairs = collectStoredCostRepairs(db, pricingData);
   return repairs.daily.length > 0 || repairs.sessions.length > 0;
 }
 
-export function repairStoredCosts(db) {
-  const repairs = collectStoredCostRepairs(db);
+export function repairStoredCosts(db, pricingData = null) {
+  const repairs = collectStoredCostRepairs(db, pricingData);
   const updateDaily = db.prepare(`UPDATE daily_usage SET cost_usd = ?, updated_at = datetime('now') WHERE rowid = ?`);
   const updateSession = db.prepare(`UPDATE session_usage SET cost_usd = ?, updated_at = datetime('now') WHERE rowid = ?`);
   for (const repair of repairs.daily) updateDaily.run(repair.cost, repair.id);

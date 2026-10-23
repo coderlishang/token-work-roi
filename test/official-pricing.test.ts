@@ -6,6 +6,7 @@ import test from 'node:test';
 import pricingCache from '../data/official-pricing.json' with { type: 'json' };
 import {
   attachOfficialPricing,
+  attachSessionPricing,
   calculateCost,
   calculateOfficialCost,
   loadPricing,
@@ -297,11 +298,14 @@ test('keeps historical DeepSeek V4 Flash pricing separate from V4.1 Flash', () =
     output: 1_000_000
   });
   const retired = calculateOfficialCost('deepseek-v4-flash-0731', { input: 1_000_000 });
+  const economy = calculateOfficialCost('deepseek-v4-1-flash-economy', { input: 1_000_000, output: 1_000_000 });
 
   assert.equal(cost.priced, true);
   assert.equal(cost.provider, 'deepseek');
   assert.equal(cost.resolvedModel, 'deepseek-flash');
   assert.equal(cost.totalUSD, 1.506);
+  assert.equal(economy.resolvedModel, 'deepseek-flash');
+  assert.equal(economy.totalUSD, 1.5);
   assert.equal(retired.resolvedModel, 'deepseek-v4-flash');
   assert.equal(retired.totalUSD, 0.14);
 });
@@ -451,6 +455,49 @@ test('calculates Alibaba Cloud official prices for Qwen3.8 and MiniMax-M3', () =
     assert.ok(rate.officialRatesPerMTok.ratesPerMTok.output > 0, expected.model);
   }
   assert.equal(resolveOfficialPricing('qwen3.8-max')?.model, 'qwen3.8');
+});
+
+test('prices MiniMax-M3.1-Flash from the official MiniMax RMB rate', () => {
+  const cost = calculateOfficialCost('MiniMax-M3.1-Flash', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'minimax-m3.1-flash');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'MiniMax');
+  assert.equal(cost.resolvedModel, 'minimax-m3.1-flash');
+  assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
+  const { input, cachedInput, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.deepEqual([input, output, cachedInput], [1, 4, 0.1]);
+  assert.ok(Math.abs(cost.totalUSD - (input + cachedInput + output) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+  assert.equal(calculateOfficialCost('minimax-m3-1-flash', {}).resolvedModel, 'minimax-m3.1-flash');
+});
+
+test('attachOfficialPricing applies rate schedules when the usage date is supplied', () => {
+  const row = { model: 'gpt-5.4-mini', inputTokens: 1_000_000, outputTokens: 1_000_000 };
+  // gpt-5.4-mini 只有 2026-09-18 起的时间表档,不给日期会当成未定价 → 0。
+  const undated = attachOfficialPricing(row, 'gpt-5.4-mini');
+  const dated = attachOfficialPricing(row, 'gpt-5.4-mini', null, null, '2026-09-18');
+  assert.equal(undated.costUSD, 0);
+  assert.equal(dated.costUSD, 1.45);
+});
+
+test('attachSessionPricing keeps the per-event stored cost for mixed-model sessions', () => {
+  const row = {
+    model: 'gpt-5.4-mini',
+    inputTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    // 落库成本按逐事件日期/模型累加,聚合重算会把多模型会话算成 1.45
+    costUSD: 10.6
+  };
+  const priced = attachSessionPricing(row, 'gpt-5.4-mini', null, null, '2026-09-18');
+  assert.equal(priced.costUSD, 10.6);
+  assert.equal(priced.pricingStatus, 'priced');
+  // 没有落库成本的导入行仍按日期价目表计算
+  assert.equal(attachSessionPricing({ ...row, costUSD: 0 }, 'gpt-5.4-mini', null, null, '2026-09-18').costUSD, 1.45);
 });
 
 test('recognizes other current cross-provider model ids without inventing prices', () => {

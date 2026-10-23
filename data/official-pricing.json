@@ -1293,7 +1293,8 @@
       "model": "deepseek-flash",
       "aliases": [
         "deepseek-flash",
-        "deepseek-v4-1-flash"
+        "deepseek-v4-1-flash",
+        "deepseek-v4-1-flash-economy"
       ],
       "priced": true,
       "unavailableReason": null,
@@ -3276,6 +3277,39 @@
       "sourceProvider": "StepFun",
       "pricingFetchStatus": "cached-official-cny",
       "note": "Official StepFun Open Platform RMB rate converted to USD at the last verified refresh rate."
+    },
+    {
+      "provider": "MiniMax",
+      "model": "minimax-m3.1-flash",
+      "aliases": [
+        "minimax-m3-1-flash"
+      ],
+      "priced": true,
+      "unavailableReason": null,
+      "ratesPerMTok": {
+        "input": 0.149415635449756,
+        "cachedInput": 0.014941563544975603,
+        "cacheWrite5m": 0.149415635449756,
+        "cacheWrite1h": 0.149415635449756,
+        "output": 0.597662541799024
+      },
+      "officialRatesPerMTok": {
+        "currency": "CNY",
+        "unit": "1M tokens",
+        "ratesPerMTok": {
+          "input": 1,
+          "output": 4,
+          "cachedInput": 0.1,
+          "cacheWrite5m": 1,
+          "cacheWrite1h": 1
+        },
+        "exchangeRate": 6.69274,
+        "sourceUnit": "元 / 1M tokens"
+      },
+      "rateSchedule": null,
+      "sourceProvider": "MiniMax",
+      "pricingFetchStatus": "official-page",
+      "note": "Official MiniMax API standard-tier RMB rate converted to USD; priority service is 1.5x and not applied by default."
     }
   ]
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import type { ProcessResult } from '../test-support/process.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { auditStructuredUsage, collectStructuredUsage, normalizeUsageRecord } from '../src/collectors/structured-usage.ts';
@@ -27,6 +27,24 @@ test('experimental structured collector imports explicit token rows only', async
     assert.equal(result.tokenEvents.length, 1, `${id} should emit one token event`);
     assert.equal(result.tokenEvents[0].source, id);
     assert.ok(result.tokenEvents[0].inputTokens + result.tokenEvents[0].outputTokens > 0);
+  }
+});
+
+test('overlapping roots read each usage file once', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-work-structured-'));
+  try {
+    const nested = join(dir, 'nested');
+    mkdirSync(nested);
+    writeFileSync(join(nested, 'usage.jsonl'), `${JSON.stringify({
+      sessionId: 'sess-overlap', model: 'glm-5.3-flash', inputTokens: 10, outputTokens: 1
+    })}\n`);
+    // 父目录与子目录同时配置时,同一文件只能计一次,否则日/会话聚合翻倍而事件表不翻倍。
+    const result = await collectStructuredUsage({ clientKey: 'copilot', roots: [dir, nested] });
+    assert.equal(result.tokenEvents.length, 1);
+    assert.equal(result.tokenEvents[0].inputTokens, 10);
+    assert.equal(result.graphJson.contributions[0].clients[0].tokens.input, 10);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

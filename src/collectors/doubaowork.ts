@@ -33,9 +33,10 @@ export const DOUBAOWORK_MODEL = 'doubao-seed-2.1-lite';
 const USAGE_FIELD = 'context_window_usage';
 const CONTEXT_FIELDS = ['system_prompt', 'messages', 'skills', 'tools'];
 const MAX_FILE_BYTES = 64 * 1024 * 1024;
-const REPLY_LOOKBACK_BYTES = 12_000;
 // model_item_key 实测在锚点前后 4-30KB 处(配置块内),窗口按最远观测值留余量。
 const FIELD_WINDOW_BYTES = 33_000;
+// reply_unique_key 与 usage 实测相距 354-388 字节,12KB 回看留足余量。
+const REPLY_LOOKBACK_BYTES = 12_000;
 
 // 消息记录滚动清理后源里只剩最近快照:只声明事件 id 前缀、不开 reconcileIncrementally,
 // 让 collect.ts 从 token_events 重建聚合,且永不删除已从源里消失的历史事件。
@@ -75,13 +76,14 @@ async function readLevelDbUsage(rootPaths) {
   const eventsByReply = new Map();
   for (const file of files) {
     for (const hit of await parseLevelDbFile(file, audit)) {
-      // 同一回复会被反复重写(原始与转义副本并存),后出现的快照覆盖先出现的;
-      // 但最新副本可能丢掉模型元数据,此时沿用先前副本取到的完整值。
+      // 同一回复会被反复重写(原始与转义副本并存),取用量较大的快照,避免后写的旧状态回退;
+      // 最新副本可能丢掉模型元数据,此时沿用先前副本取到的完整值。
       const previous = eventsByReply.get(hit.replyKey);
-      if (previous && isFallbackModel(hit.event.model) && !isFallbackModel(previous.model)) {
-        hit.event.model = previous.model;
+      const winner = previous && previous.tokens.input >= hit.event.tokens.input ? previous : hit.event;
+      if (isFallbackModel(winner.model)) {
+        winner.model = previous && !isFallbackModel(previous.model) ? previous.model : hit.event.model;
       }
-      eventsByReply.set(hit.replyKey, hit.event);
+      eventsByReply.set(hit.replyKey, winner);
     }
   }
   const events = [...eventsByReply.values()];
@@ -183,22 +185,25 @@ function parseUsageHit(text, index, mtimeMs, audit) {
   // 裸形态分隔是 `":` + 长度前缀控制字节(如 \fseed-lite-7b / \x019),转义形态是 `\":\"`。
   // 字段名有 snake_case(model_item_key)与 camelCase(modelItemKey)两种形态。
   const modelKey = nearestMatch(win, anchorInWin, /model_?[Ii]tem_?[Kk]ey[\s\\":\x00-\x1f]+([^\s\\",}]+)/g)?.[1] || null;
+  const timestamp = timestampFromWindow(win, anchorInWin) || new Date(mtimeMs).toISOString();
   // model_id 是请求级枚举(实测恒为 38),不是模型标识,不能拿它拼模型名。
-  const model = normalizeModelForGrouping(modelKey || '');
+  // 别名按事件本地日期生效,与其它采集器口径一致。
+  const model = normalizeModelForGrouping(modelKey || '', localDateFromTimestamp(timestamp));
 
   return {
     replyKey,
     event: {
       eventId: `${CLIENT_KEY}:reply:${createHash('sha256').update(replyKey).digest('hex').slice(0, 32)}`,
       sessionId: chatId || `unknown-${replyKey.slice(0, 8)}`,
-      timestamp: timestampFromWindow(win, anchorInWin) || new Date(mtimeMs).toISOString(),
+      timestamp,
       model,
       tokens: { input, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 }
     }
   };
 }
 
-// section_tag_1h 值形如 <chat序号>_YYYYMMDDHH[mm](本地时间),取离锚点最近的合法值。
+// section_tag_1h 值形如 <chat序号>_YYYYMMDDHH[mm](北京时间),取离锚点最近的合法值。
+// 固定按 +08:00 换算,容器默认 UTC 时也不会把日期/时间整体偏移。
 function timestampFromWindow(win, anchorInWin) {
   const tags = [...win.matchAll(/_(\d{10,14})/g)]
     .map(match => ({ digits: match[1], distance: Math.abs(match.index - anchorInWin) }))
@@ -212,7 +217,7 @@ function timestampFromWindow(win, anchorInWin) {
     if (year < 2020 || year > 2035) continue;
     if (month < 1 || month > 12 || day < 1 || day > 31) continue;
     if (hour > 23 || minute > 59) continue;
-    return new Date(year, month - 1, day, hour, minute).toISOString();
+    return new Date(Date.UTC(year, month - 1, day, hour - 8, minute)).toISOString();
   }
   return null;
 }
@@ -230,8 +235,9 @@ function buildOutput(events, pricingData, audit) {
     daily.cost += cost;
     dailyMap.set(dailyKey, daily);
 
-    const sessionKey = `${event.sessionId}::${event.model}`;
-    const session = sessionMap.get(sessionKey) || {
+    // 会话行主键只有 session_id:同一会话换模型也必须聚合成一行,否则后写模型覆盖前一模型用量。
+    // model 记录最后一次活动所用模型,与 collect.ts 按会话重建的口径一致。
+    const session = sessionMap.get(event.sessionId) || {
       client: CLIENT_KEY,
       workspaceKey: SOURCE_LABEL,
       workspaceLabel: SOURCE_LABEL,
@@ -247,7 +253,7 @@ function buildOutput(events, pricingData, audit) {
       session.lastActivity = event.timestamp;
       session.model = event.model;
     }
-    sessionMap.set(sessionKey, session);
+    sessionMap.set(event.sessionId, session);
   }
 
   const byDate = new Map();

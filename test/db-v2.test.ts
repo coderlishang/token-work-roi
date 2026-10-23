@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -330,6 +330,39 @@ test('annotation import skips rows whose session row is gone instead of failing 
   assert.equal(db.prepare(`SELECT output_url FROM session_outputs WHERE session_id='claude:two'`).get().output_url, 'https://example.com/live');
   assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM session_annotations WHERE session_id='deleted-session'`).get().n, 0);
 }));
+
+test('canonical ark-auto rows are not repaired again on every open', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-work-db-ark-canonical-'));
+  const dbPath = join(dir, 'usage.sqlite');
+  const configDir = join(dir, 'claude-config');
+  mkdirSync(configDir, { recursive: true });
+  // 未配置具体请求模型时 canonical 就是 ark-auto,不能再把自己当遗留模型统计/重建。
+  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({}));
+  const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = configDir;
+  resetClaudeRequestModelCache();
+  try {
+    let db = openDb(dbPath);
+    db.prepare(`INSERT INTO daily_usage (device, source, usage_date, model, input_tokens, output_tokens, total_tokens, cost_usd)
+      VALUES ('dev1', 'Claude Code', '2026-10-01', 'ark-auto', 100, 20, 120, 0.5)`).run();
+    db.close();
+
+    // 没有任何 token_events 的导入行:若被当成遗留行重建会被直接删掉。
+    for (let round = 0; round < 3; round++) {
+      db = openDb(dbPath);
+      try {
+        const row = db.prepare(`SELECT input_tokens, output_tokens, total_tokens, cost_usd FROM daily_usage WHERE model='ark-auto'`).get();
+        assert.deepEqual({ ...row }, { input_tokens: 100, output_tokens: 20, total_tokens: 120, cost_usd: 0.5 });
+        assert.equal(existsSync(join(dir, 'backups')), false);
+      } finally { db.close(); }
+    }
+  } finally {
+    if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+    resetClaudeRequestModelCache();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('ark-auto legacy session dedup moves annotations/outputs/links to the canonical twin', () => {
   const dir = mkdtempSync(join(tmpdir(), 'token-work-db-ark-'));
