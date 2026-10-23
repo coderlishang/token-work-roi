@@ -7,7 +7,9 @@ import {
   deleteAdvisorAction,
   deleteBudgetProfile,
   createSqliteBackup,
+  importAnnotationData,
   listAdvisorActions,
+  listProjectAliasRules,
   listBudgetProfiles,
   linkWorkItemSessions,
   listTokenEvents,
@@ -19,6 +21,7 @@ import {
   upsertDaily,
   upsertAdvisorAction,
   upsertBudgetProfile,
+  upsertProjectAliasRule,
   upsertSession,
   upsertTokenEvent,
   usageTotalsNeedRepair,
@@ -495,5 +498,68 @@ test('stored cost repair reprices event-backed sessions per event date and model
       input, output, cacheRead, cacheWrite: 0, reasoning: 0
     }, null, null, '2026-09-19');
     assert.notEqual(naive, cost);
+  } finally { db.close(); }
+});
+
+test('regex 别名规则写入时拒绝非法语法与嵌套量词', () => {
+  const db = tempDb();
+  try {
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '([a-)+', matchType: 'regex', projectAlias: 'X' }), /无效/);
+    // 嵌套量词
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a+)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '((a|a)*){2,}x', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a{2,3})+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a?a?)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a*?)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a|a?)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a|ab?)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    // 歧义交替
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a|aa)+b', matchType: 'regex', projectAlias: 'X' }), /歧义交替/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(home|host|hos)+b', matchType: 'regex', projectAlias: 'X' }), /歧义交替/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a'.repeat(129), matchType: 'regex', projectAlias: 'X' }), /过长/);
+    // 相邻可复用量词链:实测 a*×8 超 2 秒、a+×10 超秒、a?×30 超 5 秒
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a*'.repeat(8) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a+'.repeat(10) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a?'.repeat(8) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a{0,2}'.repeat(8) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a|)'.repeat(8) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    // 可变宽裸分组串与平坦量词链同构:(a*)×8 实测超 2 秒
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a*)'.repeat(8) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: 'a*(a*)a*(a*)a*(a*)a*(a*)b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(.+)'.repeat(10) + 'b', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(aaa|aa|a)'.repeat(10) + 'c', matchType: 'regex', projectAlias: 'X' }), /量词链/);
+    // 空交替分支藏在嵌套组里同样放大分解数
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '((a|))+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    // 安全依赖引擎优化,保守拒绝
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a?)+b', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(ab|a)+b', matchType: 'regex', projectAlias: 'X' }), /歧义交替/);
+    assert.throws(() => upsertProjectAliasRule(db, { pattern: '(a*b*)*c', matchType: 'regex', projectAlias: 'X' }), /嵌套量词/);
+    // 常规路径正则不受影响;转义与字符类内的量词符号不算嵌套
+    const ok = upsertProjectAliasRule(db, { pattern: '^/Users/[^/]+/projects/.*$', matchType: 'regex', projectAlias: 'X' });
+    assert.equal(ok.matchType, 'regex');
+    const escaped = upsertProjectAliasRule(db, { pattern: String.raw`^(?:/Users)?/\w+\.(a|b|c)+$`, matchType: 'regex', projectAlias: 'Y' });
+    assert.equal(escaped.matchType, 'regex');
+    // 不相交交替、未被量词修饰的组、字面量分隔的量词序列不得误拒
+    for (const pattern of ['(home|host)+/src', '(?:api|web|app)+', '(\\w|ab)+b', '(a|aa)', '(a|aa)|b', '^(https?)://[^/]+', 'a?'.repeat(7) + 'b', '[^/]+/'.repeat(10)]) {
+      assert.equal(upsertProjectAliasRule(db, { pattern, matchType: 'regex', projectAlias: 'Z' }).matchType, 'regex', pattern);
+    }
+  } finally { db.close(); }
+});
+
+test('导入时非法别名规则跳过并计数,不阻断整批导入', () => {
+  const db = tempDb();
+  try {
+    upsertSession(db, { device: 'demo', source: 'Codex', sessionId: 'session-1', model: 'gpt-5.6', inputTokens: 10, totalTokens: 10 });
+    const result = importAnnotationData(db, {
+      sessionAnnotations: [{ device: 'demo', source: 'Codex', sessionId: 'session-1', projectAlias: 'A' }],
+      projectAliasRules: [
+        { pattern: '^/ok/', matchType: 'prefix', projectAlias: 'ok' },
+        { pattern: '(a+)+b', matchType: 'regex', projectAlias: 'bad' }
+      ]
+    });
+    assert.equal(result.projectAliasRules, 1);
+    assert.equal(result.skipped.projectAliasRules, 1);
+    assert.equal(result.sessionAnnotations, 1);
+    assert.equal(listProjectAliasRules(db).length, 1);
   } finally { db.close(); }
 });

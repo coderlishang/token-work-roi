@@ -2723,3 +2723,45 @@ function runNode(argv, env = {}) {
     child.on('error', error => resolve({ code: 1, stdout, stderr: `${stderr}${error.message}` }));
   });
 }
+
+test('transcript model rewrite does not double-count on the scheduled incremental path', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'token-work-claude-rewrite-'));
+  const dbPath = join(dir, 'usage.sqlite');
+  const projectsDir = join(dir, 'projects', 'demo');
+  mkdirSync(projectsDir, { recursive: true });
+  const sessionFile = join(projectsDir, 'session.jsonl');
+  const env = { CLAUDE_CONFIG_DIR: dir };
+  const writeSettings = model => writeFileSync(join(dir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_MODEL: model } }));
+  const writeTranscript = model => writeFileSync(sessionFile, [1, 2].map(i => JSON.stringify({
+    type: 'assistant',
+    timestamp: `2026-10-20T10:0${i}:00Z`,
+    message: { id: `msg-${i}`, model, usage: { ...ARK_SIGNATURE, input_tokens: 100 + i, output_tokens: 20 + i } }
+  })).join('\n'));
+  const command = ['src/collect.ts', '--sources=claude', '--db', dbPath, '--apply', '--yes', '--json'];
+  try {
+    writeSettings('ark-code-latest');
+    writeTranscript('auto');
+    const first = await runNode(command, env);
+    assert.equal(first.code, 0, first.stderr);
+
+    writeSettings('glm-5.3-flash');
+    writeTranscript('glm-5.3-flash');
+    const scheduledEnv = { ...env, TOKEN_WORK_COLLECT_REASON: 'scheduled', TOKEN_WORK_SCHEDULED_INCREMENTAL: '1' };
+    const second = await runNode(command, scheduledEnv);
+    assert.equal(second.code, 0, second.stderr);
+
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM token_events WHERE source='Claude Code'").get().n, 2);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM token_events WHERE model='ark-code-latest'").get().n, 0);
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM token_events WHERE model='glm-5.3-flash'").get().n, 2);
+      const cols = 'input_tokens+output_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens';
+      const eventTotal = db.prepare(`SELECT SUM(${cols}) t FROM token_events WHERE source='Claude Code'`).get().t;
+      for (const table of ['daily_usage', 'session_usage']) {
+        assert.equal(db.prepare(`SELECT SUM(total_tokens) t FROM ${table} WHERE source='Claude Code'`).get().t, eventTotal);
+      }
+    } finally { db.close(); }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

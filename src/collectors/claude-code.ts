@@ -390,7 +390,9 @@ function collectFromFiles(files, pricingData) {
     tokenEvents,
     reconciliation: {
       managedEventIdPrefix: 'claude:',
-      managedEventSessionPrefixes: [...managedEventSessionPrefixes]
+      managedEventSessionPrefixes: [...managedEventSessionPrefixes],
+      // transcript 的 model 字段会被 compaction 改写,增量整文件重解析须同步对账清理旧标签副本,否则双计
+      reconcileIncrementally: true
     }
   };
 }

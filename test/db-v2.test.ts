@@ -298,7 +298,7 @@ test('annotation export and import round-trip v3 data', () => withDb((db) => {
     sessionAnnotations: 1,
     sessionOutputs: 1,
     projectAliasRules: 1,
-    skipped: { sessionAnnotations: 0, sessionOutputs: 0 }
+    skipped: { sessionAnnotations: 0, sessionOutputs: 0, projectAliasRules: 0 }
   });
   assert.equal(db.prepare('SELECT COUNT(*) AS total FROM session_outputs').get().total, 1);
   const importedAnnotation = db.prepare('SELECT work_purpose AS workPurpose, work_stage AS workStage, value_level AS valueLevel FROM session_annotations').get();
@@ -324,7 +324,7 @@ test('annotation import skips rows whose session row is gone instead of failing 
     sessionAnnotations: 1,
     sessionOutputs: 1,
     projectAliasRules: 0,
-    skipped: { sessionAnnotations: 1, sessionOutputs: 1 }
+    skipped: { sessionAnnotations: 1, sessionOutputs: 1, projectAliasRules: 0 }
   });
   assert.equal(db.prepare(`SELECT project_alias FROM session_annotations WHERE session_id='codex:one'`).get().project_alias, 'live');
   assert.equal(db.prepare(`SELECT output_url FROM session_outputs WHERE session_id='claude:two'`).get().output_url, 'https://example.com/live');

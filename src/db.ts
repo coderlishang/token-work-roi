@@ -1002,12 +1002,153 @@ export function listProjectAliasRules(db, { enabledOnly = false } = {}) {
   }));
 }
 
+// 剔除转义序列与字符类(内部符号不构成量词),组前缀标记归一为普通组
+function stripRegexSyntax(pattern) {
+  return pattern
+    .replace(/\\(?:x\{[0-9a-fA-F]+\}|u\{[0-9a-fA-F]+\}|p\{[^}]*\}|.)/g, '0')
+    .replace(/\[(?:[^\]\\]|\\.)*\]/g, '0')
+    .replace(/\((?:\?<=|\?<!|\?:|\?=|\?!|\?<[A-Za-z_$][A-Za-z0-9_$]*)/g, '(');
+}
+
+// 嵌套量词或歧义交替(如 (a+)+、a|aa)回溯指数膨胀,写入时直接拒绝
+function hasExplosiveQuantifiedGroup(pattern) {
+  const stripped = stripRegexSyntax(pattern);
+  for (let close = 0; close < stripped.length; close += 1) {
+    if (stripped[close] !== ')') continue;
+    const next = stripped[close + 1];
+    if (!next || !'+*?{'.includes(next)) continue;
+    let depth = 0;
+    let open = close;
+    while (open >= 0) {
+      if (stripped[open] === ')') depth += 1;
+      else if (stripped[open] === '(') {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+      open -= 1;
+    }
+    if (open < 0) return true;
+    const body = stripped.slice(open + 1, close);
+    if (/[*+?{]/.test(body)) return true;
+    if (hasAmbiguousAlternation(body)) return true;
+    // 组体任意深度含空交替分支((a|) 量化后即 (a?)+ 爆炸形),一并拒绝
+    if (hasEmptyAlternationBranch(body)) return true;
+  }
+  return false;
+}
+
+// 交替分支前缀重叠(含空分支)即有多重分解
+function hasAmbiguousAlternation(body) {
+  const branches = splitTopLevelBranches(body);
+  return branches.some((left, i) => branches.some((right, j) => i !== j && right.startsWith(left)));
+}
+
+function splitTopLevelBranches(body) {
+  const branches = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of body) {
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth -= 1;
+    if (ch === '|' && depth === 0) {
+      branches.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  branches.push(current);
+  return branches;
+}
+
+// 空交替分支:顶层分支为空,或嵌套组体里出现空分支邻接记号((|、|)、||)
+function hasEmptyAlternationBranch(body) {
+  return body === '' || body.startsWith('|') || body.endsWith('|') || body.includes('||') || /(\(\||\|\))/.test(body);
+}
+
+// 相邻可复用量词链(如 a*a*a*…b、a? a? a?…b):链上每个量词都提供多重分解,
+// 链长即组合爆炸(实测 a*×8 超 2 秒、a+×10 超秒);夹在中间的字面量分隔符
+// (如 [^/]+/[^/]+)锁死切分方式,会断链,不算危险
+function hasLongQuantifierRun(pattern) {
+  const stripped = stripRegexSyntax(pattern);
+  let run = 0;
+  let prevLiteral;
+  let i = 0;
+  while (i < stripped.length) {
+    let literal; // undefined=断链; null=可复用原子(通配); 其它=可复用原子(该字面量)
+    let width = 1;
+    const ch = stripped[i];
+    if (ch === '(') {
+      let depth = 0;
+      let close = i;
+      for (; close < stripped.length; close += 1) {
+        if (stripped[close] === '(') depth += 1;
+        else if (stripped[close] === ')' && --depth === 0) break;
+      }
+      const body = stripped.slice(i + 1, close);
+      width = close + 1 - i;
+      // 可变宽组(体含重复量词/宽花括号,或有空分支、前缀重叠交替)与相邻量词
+      // 同样提供多重分解,如 (a*)(a*)×8 实测超 2 秒,须计入链
+      if (/[*+?]/.test(body) || /\{\d+,/.test(body) || hasEmptyAlternationBranch(body) || hasAmbiguousAlternation(body)) {
+        literal = null;
+        width += quantifierWidth(stripped, close + 1);
+      }
+    } else if ('^$|){}'.includes(ch) || (ch === '?' && !'*+?'.includes(stripped[i - 1] || ''))) {
+      // 锚点/交替/悬空量词断链
+    } else {
+      const qw = quantifierWidth(stripped, i + 1);
+      if (qw > 0) {
+        // 0 是转义与字符类的占位符,视作通配;懒惰标记随量词一并吞掉
+        literal = ch === '0' ? null : ch;
+        width = 1 + qw + (stripped[i + 1 + qw] === '?' ? 1 : 0);
+      }
+    }
+    if (literal === undefined) {
+      run = 0;
+      prevLiteral = undefined;
+    } else {
+      if (run > 0 && literal !== null && prevLiteral !== undefined && prevLiteral !== null && prevLiteral !== literal) {
+        run = 0;
+      }
+      run += 1;
+      prevLiteral = literal;
+      if (run >= 8) return true;
+    }
+    i += width;
+  }
+  return false;
+}
+
+// 返回 pos 处量词宽度;{n} 定长与 {n,n} 无分解自由度,返回 0 视作断链
+function quantifierWidth(stripped, pos) {
+  const ch = stripped[pos];
+  if (ch === '*' || ch === '+' || ch === '?') return 1;
+  const brace = /^\{(\d+)(,)?(\d*)\}/.exec(stripped.slice(pos));
+  if (!brace || brace[2] === undefined) return 0;
+  if (brace[3] === '' || Number(brace[3]) - Number(brace[1]) >= 1) return brace[0].length;
+  return 0;
+}
+
 export function normalizeProjectAliasRule(row: InputRecord = {}) {
   const id = normalizeOptionalId(row.id, 'id');
   const pattern = normalizedRequired(row.pattern, 'pattern');
   const matchType = normalizeEnum(row.matchType ?? row.match_type, PROJECT_ALIAS_MATCH_TYPES, 'prefix', 'matchType');
   const projectAlias = normalizedRequiredMax(row.projectAlias ?? row.project_alias, 'projectAlias', 120);
   const enabled = normalizeBoolean(row.enabled, true);
+  if (matchType === 'regex') {
+    if (pattern.length > 128) throw new Error('regex pattern 过长(上限 128 字符)');
+    try {
+      new RegExp(pattern, 'i');
+    } catch (error) {
+      throw new Error(`regex pattern 无效: ${error.message}`);
+    }
+    if (hasExplosiveQuantifiedGroup(pattern)) {
+      throw new Error('regex pattern 含嵌套量词或歧义交替(如 (a+)+、a|aa),回溯会指数膨胀,请改写');
+    }
+    if (hasLongQuantifierRun(pattern)) {
+      throw new Error('regex pattern 相邻可复用量词链过长(如 a*a*a*a*…),回溯组合爆炸,请改写');
+    }
+  }
   return { id, pattern, matchType, projectAlias, enabled };
 }
 
@@ -1164,7 +1305,8 @@ export function importAnnotationData(db, payload: InputRecord = {}) {
   const liveOutputs = sessionOutputs.filter(hasSession);
   const skipped = {
     sessionAnnotations: sessionAnnotations.length - liveAnnotations.length,
-    sessionOutputs: sessionOutputs.length - liveOutputs.length
+    sessionOutputs: sessionOutputs.length - liveOutputs.length,
+    projectAliasRules: 0
   };
 
   db.exec('BEGIN');
@@ -1182,8 +1324,13 @@ export function importAnnotationData(db, payload: InputRecord = {}) {
       counts.sessionOutputs += 1;
     }
     for (const row of projectAliasRules) {
-      upsertProjectAliasRule(db, row);
-      counts.projectAliasRules += 1;
+      // 规则校验失败跳过并计数,不让整批导入失败
+      try {
+        upsertProjectAliasRule(db, row);
+        counts.projectAliasRules += 1;
+      } catch {
+        skipped.projectAliasRules += 1;
+      }
     }
     db.exec('COMMIT');
   } catch (error) {
