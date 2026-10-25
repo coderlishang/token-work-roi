@@ -580,6 +580,28 @@ test('prices Kimi K3 from the corrected K3-series column order and recognizes K2
   assert.equal(calculateOfficialCost('kimi-k2-8-preview', { input: 1_000_000 }).resolvedModel, 'kimi-k2.8-preview');
 });
 
+test('prices Kimi K3.1 Pro and Highspeed from official CNY rates', () => {
+  // 官方 K3.1 表:标准 ¥13/¥68/命中1.3/写5m 13/写1h 26;高速 ¥26/¥136/命中1.3/写5m 26/写1h 52
+  for (const [model, rates] of [
+    ['kimi-k3.1-pro', { input: 13, cachedInput: 1.3, cacheWrite5m: 13, cacheWrite1h: 26, output: 68 }],
+    ['kimi-k3-1-pro-highspeed', { input: 26, cachedInput: 1.3, cacheWrite5m: 26, cacheWrite1h: 52, output: 136 }]
+  ] as const) {
+    const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === model || item.aliases?.includes(model));
+    assert.ok(rate, model);
+    assert.deepEqual(rate.officialRatesPerMTok?.ratesPerMTok, rates);
+    const cost = calculateOfficialCost(model, {
+      input: 1_000_000,
+      output: 1_000_000,
+      cacheRead: 1_000_000,
+      cacheWrite: 1_000_000
+    });
+    assert.equal(cost.priced, true, model);
+    const exchange = rate.officialRatesPerMTok.exchangeRate;
+    const expected = (rates.input + rates.output + rates.cachedInput + rates.cacheWrite5m) / exchange;
+    assert.ok(Math.abs(cost.totalUSD - expected) < 1e-9, model);
+  }
+});
+
 test('calculates Qwen API USD price from official RMB rates', () => {
   const coder = calculateOfficialCost('qwen3-coder', {
     input: 1_000_000,
