@@ -8,7 +8,7 @@ const DEFAULT_WORK_STAGE = '未说明';
 const DEFAULT_VALUE_LEVEL = '未评估';
 
 const HEAVY_MODEL_PATTERNS = [/(?:^|[/:\s])gpt-6-astra(?:$|[-:])/i, /^gpt-5\.6-sol/i, /^gpt-5\.5/i, /claude-(?:mythos|fable)/i, /claude-opus/i, /gemini-2\.5-pro-long-context/i];
-const MID_MODEL_PATTERNS = [/^gpt-5\.6-terra/i, /^grok-4[.-]5/i, /^gpt-5\.3-codex$/i, /claude-sonnet/i, /gemini-2\.5-pro/i, /kimi-k2[.-][67]/i];
+const MID_MODEL_PATTERNS = [/^gpt-5\.6-terra/i, /^grok-4[.-]5/i, /^gpt-5\.3-codex$/i, /claude-sonnet/i, /gemini-2\.5-pro/i, /kimi-k2[.-][67]/i, /kimi-k3[.-]1/i];
 const LIGHT_MODEL_PATTERNS = [/^gpt-5\.6-luna$/i, /claude-haiku/i, /deepseek/i, /mimo/i, /gemini-2\.5-flash/i, /kimi-k2[.-]5/i];
 const EXPLORATION_PURPOSES = new Set(['测试验证', '上下文整理']);
 const EXPLORATION_STAGES = new Set(['探索', '验证']);

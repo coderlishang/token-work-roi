@@ -958,7 +958,8 @@ function isMidModel(model) {
     || value.includes('gpt-5.3')
     || value.includes('codex')
     || value.includes('gemini-2.5-pro')
-    || /kimi-k2[.-][67]/.test(value);
+    || /kimi-k2[.-][67]/.test(value)
+    || /kimi-k3[.-]1/.test(value);
 }
 
 function modelMatchesGroup(model, modelGroup, pricingData) {

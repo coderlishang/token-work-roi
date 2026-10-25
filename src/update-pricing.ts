@@ -15,6 +15,11 @@ const pricingSourcePath = resolve(process.cwd(), 'src', 'pricing.ts');
 const MAX_PRICING_PAGE_BYTES = 8 * 1024 * 1024;
 const MAX_PRICING_ASSET_BYTES = 4 * 1024 * 1024;
 const MAX_PRICING_ASSETS = 4;
+// 本模块顶层有 await(第 98 行起),解析函数在其求值期间被调用;
+// 解析器用到的模块级常量必须声明在顶层 await 之前,否则 TDZ
+const KIMI_MODEL_PATTERN = /^kimi-(?:k3(?:\.1-pro(?:-highspeed)?)?|k2\.7-code(?:-highspeed)?|k2\.6)$/;
+// 分组标题(如 基础 tokens/上下文缓存)不是数据列,定位列前必须剔除,否则列索引整体偏移
+const KIMI_GROUP_TITLES = ['基础 tokens', '上下文缓存'];
 
 interface ParsedRates {
   input: number;
@@ -92,7 +97,9 @@ const STABLE_ALIASES = new Map([
   ['qwen::qwen-coder-plus', ['qwen-coder-plus']],
   ['qwen::qwen-coder-turbo', ['qwen-coder-turbo']],
   ['tencent hunyuan::hy3', ['hy3', 'hy-3', 'hunyuan-hy3', 'hy3-x', 'hy3_x', 'hunyuan-hy3-x', 'hunyuan_hy3_x']],
-  ['tencent hunyuan::hy4-preview', ['hy4-preview', 'hy-4-preview', 'hunyuan-hy4-preview', 'hunyuan-hy-4-preview']]
+  ['tencent hunyuan::hy4-preview', ['hy4-preview', 'hy-4-preview', 'hunyuan-hy4-preview', 'hunyuan-hy-4-preview']],
+  ['kimi::kimi-k3-1-pro', ['kimi-k3.1-pro', 'kimi-k3-1-pro']],
+  ['kimi::kimi-k3-1-pro-highspeed', ['kimi-k3.1-pro-highspeed', 'kimi-k3-1-pro-highspeed']]
 ]);
 const fetchedAt = new Date().toISOString();
 const previousModels = await readPreviousPricingModels(pricingCachePath);
@@ -987,50 +994,107 @@ function usdAmounts(value) {
   );
 }
 
+// K3.1-Pro 发布后定价页重构:<DocTable/> 资产被移除,表格以内联 RSC JSX 形式
+// 嵌在 HTML 里(title:`X` 反引号形态、行首为 _jsx children 反引号模型名)。
+// 新旧两种结构都解析;列一律按表头定位,不按位置硬取。
 function parseKimiModels(body, exchangeRate) {
-  // K3 表比 K2 表多两列缓存写入且列序不同(写5m | 写1h | 命中 | 未命中 | 输出),
-  // 必须按各表表头定位列;按位置硬取前三个 ¥ 值会把 K3 的缓存写入当输入、
-  // 命中输入当输出(实测踩坑)。
   const models = [];
   for (const tableMatch of body.matchAll(/<DocTable\b[\s\S]*?\/>/g)) {
-    const titles = Array.from(tableMatch[0].matchAll(/title:\s*"([^"]+)"/g), match => match[1]);
-    const column = (...keywords) => titles.findIndex(title => keywords.every(keyword => title.includes(keyword)));
-    const hitIndex = column('缓存命中');
-    const missIndex = column('缓存未命中');
-    const inputIndex = missIndex >= 0 ? missIndex : column('输入价格');
-    const outputIndex = column('输出价格');
-    if (hitIndex < 0 || inputIndex < 0 || outputIndex < 0) continue;
-    const write5mIndex = column('缓存写入', '5min');
-    const write1hIndex = column('缓存写入', '1h');
-    for (const rowMatch of tableMatch[0].matchAll(/\[((?:\s*"[^"]*",)+\s*"[^"]*")\s*\]/g)) {
-      const cells = Array.from(rowMatch[1].matchAll(/"([^"]*)"/g), match => match[1]);
-      if (!/^kimi-(?:k3|k2\.(?:7-code(?:-highspeed)?|6|5))$/.test(cells[0]) || cells[1] !== '1M tokens') continue;
-      // 缺列(如 K2 表无缓存写入)必须返回 NaN 走默认值,Number('')=0 会被误当有效费率。
-      const amount = index => index >= 0 && index < cells.length ? Number(String(cells[index]).replace('¥', '')) : NaN;
-      const input = amount(inputIndex);
-      const cachedInput = amount(hitIndex);
-      const output = amount(outputIndex);
-      const cacheWrite5m = amount(write5mIndex);
-      const cacheWrite1h = amount(write1hIndex);
-      if (![input, cachedInput, output].every(Number.isFinite)) continue;
-      const rates = {
-        input,
-        cachedInput,
-        cacheWrite5m: Number.isFinite(cacheWrite5m) ? cacheWrite5m : input,
-        cacheWrite1h: Number.isFinite(cacheWrite1h) ? cacheWrite1h : input,
-        output
-      };
-      models.push(rateModel('Kimi', cells[0], cnyToUsdRates(rates, exchangeRate), 'Kimi', 'official-page-asset', {
-        currency: 'CNY',
-        unit: '1M tokens',
-        ratesPerMTok: rates,
-        exchangeRate: exchangeRate.rate,
-        sourceUnit: '元 / 1M tokens'
-      }, 'Official Kimi API CNY rate parsed from the current model pricing pages.'));
-    }
+    models.push(...parseKimiTable(tableMatch[0], extractKimiCellsLegacy, extractKimiModelLegacy, exchangeRate));
+  }
+  for (const tableMatch of body.matchAll(/_jsx\(DocTable,\{[\s\S]*?rows:\[\[[\s\S]*?\]\]\}\)\}/g)) {
+    models.push(...parseKimiTable(tableMatch[0], extractKimiCellsRsc, extractKimiModelRsc, exchangeRate));
   }
   // 汇率无效时 rateModel 返回 null,与旧实现一致过滤掉。
   return models.filter(Boolean);
+}
+
+function parseKimiTable(table, extractCells, extractModel, exchangeRate) {
+  // 新表头含 Tooltip 包裹(title:_jsx(Tooltip,{...,children:`缓存命中`})),列名取 title: 的直接反引号串
+  // 或 Tooltip 的 children 反引号串;分组标题(基础 tokens/上下文缓存)不是数据列,先剔除
+  const titles = Array.from(table.matchAll(/title:(?:_jsx\(Tooltip,\{[^,]*,children:)?[`"]([^`"]+)[`"]/g), match => match[1])
+    .filter(title => !KIMI_GROUP_TITLES.some(group => title.includes(group)));
+  const column = (...keywords) => titles.findIndex(title => keywords.every(keyword => title.includes(keyword)));
+  const hitIndex = column('缓存命中');
+  const missIndex = column('缓存未命中');
+  // 新表头为"输入/输出",旧表头为"输入价格/输出价格";两种形态分别尝试
+  const firstIndex = (...names) => {
+    for (const name of names) {
+      const index = column(name);
+      if (index >= 0) return index;
+    }
+    return -1;
+  };
+  const inputIndex = missIndex >= 0 ? missIndex : firstIndex('输入价格', '输入');
+  const outputIndex = firstIndex('输出价格', '输出');
+  if (hitIndex < 0 || inputIndex < 0 || outputIndex < 0) return [];
+  const write5mIndex = column('缓存写入', '5min');
+  const write1hIndex = column('缓存写入', '1h');
+  const models = [];
+  for (const cells of extractCells(table)) {
+    const model = extractModel(cells);
+    if (!KIMI_MODEL_PATTERN.test(model)) continue;
+    // 缺列(如 K2 表无缓存写入)必须返回 NaN 走默认值,Number('')=0 会被误当有效费率;
+    // 新页面价格带 " / MTok" 后缀,一并去掉再转数字
+    const amount = index => index >= 0 && index < cells.length ? Number(String(cells[index]).replace(/[^0-9.]/g, '')) : NaN;
+    const input = amount(inputIndex);
+    const cachedInput = amount(hitIndex);
+    const output = amount(outputIndex);
+    const cacheWrite5m = amount(write5mIndex);
+    const cacheWrite1h = amount(write1hIndex);
+    if (![input, cachedInput, output].every(Number.isFinite)) continue;
+    const rates = {
+      input,
+      cachedInput,
+      cacheWrite5m: Number.isFinite(cacheWrite5m) ? cacheWrite5m : input,
+      cacheWrite1h: Number.isFinite(cacheWrite1h) ? cacheWrite1h : input,
+      output
+    };
+    models.push(rateModel('Kimi', model, cnyToUsdRates(rates, exchangeRate), 'Kimi', 'official-page-asset', {
+      currency: 'CNY',
+      unit: '1M tokens',
+      ratesPerMTok: rates,
+      exchangeRate: exchangeRate.rate,
+      sourceUnit: '元 / 1M tokens'
+    }, 'Official Kimi API CNY rate parsed from the current model pricing pages.'));
+  }
+  return models;
+}
+
+// 旧结构:纯字符串数组行,首格即模型名,次格为单位 "1M tokens"
+function extractKimiCellsLegacy(table) {
+  const rows = [];
+  for (const rowMatch of table.matchAll(/\[((?:\s*"[^"]*",)+\s*"[^"]*")\s*\]/g)) {
+    const cells = Array.from(rowMatch[1].matchAll(/"([^"]*)"/g), match => match[1]);
+    if (cells[1] !== '1M tokens') continue;
+    rows.push(cells);
+  }
+  return rows;
+}
+
+function extractKimiModelLegacy(cells) {
+  return cells[0];
+}
+
+// 新结构:RSC JSX 行 [[_jsx(_components.a,{...,children:`模型名`}),`¥N / MTok`,...],...]
+// 首个 children 反引号串为模型名,其余反引号串为价格;不产生 "1M tokens" 占位,
+// cells 与剔除分组后的 titles 一一对应。
+function extractKimiCellsRsc(table) {
+  // 行以 [ 或 , 后跟 _jsx 开始;价格串不含 ],惰性匹配到行尾单个 ] 即止,逐行切分
+  const rows = [];
+  for (const rowMatch of table.matchAll(/\[_jsx[\s\S]*?\](?=,|\])/g)) {
+    const parts = Array.from(rowMatch[0].matchAll(/`([^`]*)`/g), match => match[1]);
+    const modelIndex = parts.findIndex(part => part.startsWith('kimi-'));
+    if (modelIndex < 0) continue;
+    const prices = parts.slice(modelIndex + 1).filter(part => /^¥[\d.]+ \/ MTok$/.test(part));
+    if (!prices.length) continue;
+    rows.push([parts[modelIndex], ...prices]);
+  }
+  return rows;
+}
+
+function extractKimiModelRsc(cells) {
+  return cells[0];
 }
 
 function parseTencentHunyuanModels(body, exchangeRate) {
@@ -1122,13 +1186,19 @@ function parseQwenModels(body, exchangeRate) {
 function qwenRates(body, label): ParsedRates | null {
   const start = body.indexOf(`>${label}<`);
   if (start < 0) return null;
-  const segment = body.slice(start, start + 5000);
-  const text = tableText(segment);
-  const prices = Array.from(text.matchAll(/([0-9]+(?:\.[0-9]+)?)\|+\s*元/g), match => Number(match[1]));
-  if (prices.length < 2) return null;
+  const rowEnd = body.indexOf('</tr>', start);
+  if (rowEnd < 0) return null;
+  // 逐单元格取价:整段拍平会把分档价(如 MiniMax-M3 输入 2.1/4.2 元)的
+  // 输入高档错当输出价;首个含价单元格是输入价,其后是输出价,格内多档取第一档
+  const cellPrices = [];
+  for (const cell of body.slice(start, rowEnd).split(/<td[\s>]/)) {
+    const prices = Array.from(tableText(cell).matchAll(/([0-9]+(?:\.[0-9]+)?)\|+\s*元/g), match => Number(match[1]));
+    if (prices.length) cellPrices.push(prices[0]);
+  }
+  if (cellPrices.length < 2) return null;
   return {
-    input: prices[0],
-    output: prices[1]
+    input: cellPrices[0],
+    output: cellPrices[1]
   };
 }
 
