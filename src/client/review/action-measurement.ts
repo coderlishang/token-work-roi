@@ -109,9 +109,9 @@ function scopeMatcher(action: UsageRow = {}) {
 
 function modelTierLabel(session: UsageRow = {}) {
   const model = String(session.model || session.pricingModel || '').toLowerCase();
-  if (/mythos|fable|opus|gpt-5\.6-sol|gpt-5\.5|gemini-2\.5-pro-long-context/.test(model)) return 'heavy';
-  if (/gpt-5\.6-terra|grok-4[.-]5|sonnet|codex|pro|kimi-k2[.-][67]/.test(model)) return 'mid';
-  if (/gpt-5\.6-luna|haiku|flash|deepseek|mimo|kimi-k2[.-]5/.test(model)) return 'light';
+  if (/mythos|fable|opus|gpt-6-sol|gpt-6[.-]1-sol|gpt-5\.6-sol|gpt-5\.5|gemini-2\.5-pro-long-context/.test(model)) return 'heavy';
+  if (/gpt-5\.6-terra|gpt-6[.-]1-terra|grok-4[.-]5|sonnet|codex|pro|kimi-k2[.-][67]/.test(model)) return 'mid';
+  if (/gpt-5\.6-luna|gpt-6-luna|haiku|flash|deepseek|mimo|kimi-k2[.-]5/.test(model)) return 'light';
   return 'unknown';
 }
 

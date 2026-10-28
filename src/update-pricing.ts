@@ -41,6 +41,7 @@ const STABLE_ALIASES = new Map([
   ['openai::gpt-6-astra', ['gpt-6-astra', 'gpt_6_astra']],
   ['openai::gpt-6-sol', ['gpt-6-sol']],
   ['openai::gpt-6-1-sol', ['gpt-6.1-sol', 'gpt-6-1-sol']],
+  ['openai::gpt-6-1-terra', ['gpt-6.1-terra', 'gpt-6-1-terra']],
   ['openai::gpt-6-luna', ['gpt-6-luna']],
   ['openai::gpt-5-6-sol', ['gpt-5.6-sol', 'gpt-5-6-sol']],
   ['openai::gpt-5-6-terra', ['gpt-5.6-terra', 'gpt-5-6-terra']],
@@ -500,6 +501,7 @@ function parseSourceModels(source, body, exchangeRate) {
   if (isOpenAiGpt6AstraSource(source)) return parseOpenAiGpt6AstraModel(body);
   if (isOpenAiGpt6SolLunaSource(source)) return parseOpenAiGpt6SolLunaModels(body);
   if (isOpenAiGpt61SolSource(source)) return parseOpenAiGpt61SolModel(body);
+  if (isOpenAiGpt61TerraSource(source)) return parseOpenAiGpt61TerraModel(body);
   if (isOpenAiGpt56Source(source)) return parseOpenAiGpt56Models(body);
   if (source.provider === 'xai') return parseXaiModels(body);
   if (source.provider === 'anthropic-mythos') return parseAnthropicMythosModels(body);
@@ -525,6 +527,7 @@ function sourceHasPricingParser(source) {
   return isOpenAiGpt6AstraSource(source)
     || isOpenAiGpt6SolLunaSource(source)
     || isOpenAiGpt61SolSource(source)
+    || isOpenAiGpt61TerraSource(source)
     || isOpenAiGpt56Source(source)
     || source.provider === 'xai'
     || source.provider === 'anthropic-mythos'
@@ -611,6 +614,19 @@ function parseOpenAiGpt61SolModel(body) {
     cacheWrite1h: 2.5,
     output: 10
   }, 'openai-gpt-6.1-sol', 'official-page', null, 'OpenAI GPT-6.1 Sol standard API rate. Cache write is input × 1.25; cached input is input × 0.05.')];
+}
+
+function parseOpenAiGpt61TerraModel(body) {
+  const text = tableText(body).toLowerCase();
+  const expectedRates = [1, 0.05, 1.25, 5];
+  if (!text.includes('gpt-6.1-terra') || !expectedRates.every(price => mentionsExactUsdPrice(text, price))) return [];
+  return [rateModel('openai', 'gpt-6.1-terra', {
+    input: 1,
+    cachedInput: 0.05,
+    cacheWrite5m: 1.25,
+    cacheWrite1h: 1.25,
+    output: 5
+  }, 'openai-gpt-6.1-terra', 'official-page', null, 'OpenAI GPT-6.1 Terra standard API rate. Cache write is input × 1.25; cached input is input × 0.05.')];
 }
 
 // 精确金额校验：$2.50 不能充当 $2、$0.125 不能充当 $0.1，仅允许小数末尾补零
@@ -1374,6 +1390,10 @@ function parseMiniMaxModels(body, exchangeRate) {
 
 function isOpenAiGpt61SolSource(source) {
   return providerKey(source?.provider) === 'openai gpt 6.1 sol';
+}
+
+function isOpenAiGpt61TerraSource(source) {
+  return providerKey(source?.provider) === 'openai gpt 6.1 terra';
 }
 
 function providerKey(provider) {

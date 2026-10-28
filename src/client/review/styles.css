@@ -468,7 +468,6 @@ section.story:last-of-type  { padding-bottom: 0; }
   letter-spacing: -0.025em;
   color: var(--ink);
   margin: 0 0 22px;
-  text-wrap: balance;
 }
 .hero-headline .num {
   font-feature-settings: 'lnum', 'ss01';
