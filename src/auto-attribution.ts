@@ -362,9 +362,9 @@ function inferFromModelAndActivity(session, now) {
 function modelTier(model, pricingStatus = '') {
   const name = normalizeText(model).toLowerCase();
   if (!name || name === '<synthetic>' || pricingStatus === 'unpriced') return 'unpriced';
-  if (/(?:^|[/:\s])gpt-6-astra(?:$|[-:])/.test(name) || name.startsWith('gpt-5.6-sol') || name.startsWith('gpt-5.5') || name.includes('claude-mythos') || name.includes('claude-fable') || name.includes('claude-opus') || name.includes('gemini-2.5-pro-long-context')) return 'heavy';
-  if (name.startsWith('gpt-5.6-terra') || name === 'gpt-5.3-codex' || /^grok-4[.-]5/.test(name) || name.includes('claude-sonnet') || name.includes('gemini-2.5-pro') || /kimi-k2[.-][67]/.test(name) || /kimi-k3[.-]1/.test(name)) return 'mid';
-  if (name === 'gpt-5.6-luna' || name.includes('claude-haiku') || name.includes('deepseek') || name.includes('mimo') || name.includes('gemini-2.5-flash') || /kimi-k2[.-]5/.test(name)) return 'light';
+  if (/(?:^|[/:\s])gpt-6-astra(?:$|[-:])/.test(name) || name.startsWith('gpt-6-sol') || /^gpt-6[.-]1-sol/.test(name) || name.startsWith('gpt-5.6-sol') || name.startsWith('gpt-5.5') || name.includes('claude-mythos') || name.includes('claude-fable') || name.includes('claude-opus') || name.includes('gemini-2.5-pro-long-context')) return 'heavy';
+  if (name.startsWith('gpt-5.6-terra') || /^gpt-6[.-]1-terra/.test(name) || name === 'gpt-5.3-codex' || /^grok-4[.-]5/.test(name) || name.includes('claude-sonnet') || name.includes('gemini-2.5-pro') || /kimi-k2[.-][67]/.test(name) || /kimi-k3[.-]1/.test(name)) return 'mid';
+  if (name === 'gpt-5.6-luna' || name.startsWith('gpt-6-luna') || name.includes('claude-haiku') || name.includes('deepseek') || name.includes('mimo') || name.includes('gemini-2.5-flash') || /kimi-k2[.-]5/.test(name)) return 'light';
   return 'unknown';
 }
 

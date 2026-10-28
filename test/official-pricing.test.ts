@@ -125,6 +125,12 @@ test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
     cacheWrite: 1_000_000,
     output: 1_000_000
   });
+  const terra61 = calculateOfficialCost('gpt-6-1-terra', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
   const luna = calculateOfficialCost('gpt-6-luna', {
     input: 1_000_000,
     cacheRead: 1_000_000,
@@ -139,6 +145,9 @@ test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
   assert.equal(sol61.priced, true);
   assert.equal(sol61.resolvedModel, 'gpt-6.1-sol');
   assert.equal(sol61.totalUSD, 14.6);
+  assert.equal(terra61.priced, true);
+  assert.equal(terra61.resolvedModel, 'gpt-6.1-terra');
+  assert.equal(terra61.totalUSD, 7.3);
   assert.equal(luna.priced, true);
   assert.equal(luna.resolvedModel, 'gpt-6-luna');
   assert.equal(luna.totalUSD, 0.735);

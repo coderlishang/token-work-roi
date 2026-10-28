@@ -935,7 +935,7 @@ function isUnpricedModel(model, pricingData) {
 
 function isHeavyModel(model) {
   const value = String(model || '').toLowerCase();
-  return value.includes('mythos') || value.includes('fable') || value.includes('opus') || /(?:^|[/:\s])gpt-6-astra(?:$|[-:])/.test(value) || value.includes('gpt-5.6-sol') || value.includes('gpt-5.5') || value.includes('gemini-2.5-pro-long-context');
+  return value.includes('mythos') || value.includes('fable') || value.includes('opus') || /(?:^|[/:\s])gpt-6-astra(?:$|[-:])/.test(value) || value.includes('gpt-6-sol') || /gpt-6[.-]1-sol/.test(value) || value.includes('gpt-5.6-sol') || value.includes('gpt-5.5') || value.includes('gemini-2.5-pro-long-context');
 }
 
 function isLightModel(model) {
@@ -944,6 +944,7 @@ function isLightModel(model) {
     || value.includes('flash')
     || value.includes('spark')
     || value.includes('gpt-5.6-luna')
+    || value.includes('gpt-6-luna')
     || value.includes('deepseek')
     || value.includes('mimo')
     || value.includes('gemini-2.5-flash')
@@ -956,6 +957,8 @@ function isMidModel(model) {
     || value.includes('grok-4.5')
     || value.includes('grok-4-5')
     || value.includes('gpt-5.3')
+    || value.includes('gpt-5.6-terra')
+    || /gpt-6[.-]1-terra/.test(value)
     || value.includes('codex')
     || value.includes('gemini-2.5-pro')
     || /kimi-k2[.-][67]/.test(value)
