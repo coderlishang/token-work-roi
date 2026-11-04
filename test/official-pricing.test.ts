@@ -355,6 +355,30 @@ test('prices GLM-5.3 and GLM-5.3-Flash from current official RMB rates', () => {
   ) / flashRate.officialRatesPerMTok.exchangeRate) < 1e-12);
 });
 
+test('prices Hy4 from official Tencent TokenHub rates', () => {
+  const cost = calculateOfficialCost('hy4', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  const alias = calculateOfficialCost('hunyuan-hy4', { input: 1_000_000 });
+  const workbuddyLabel = calculateOfficialCost('hy4-free', { input: 1_000_000 });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'hy4');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'Tencent Hunyuan');
+  assert.equal(cost.resolvedModel, 'hy4');
+  assert.equal(alias.resolvedModel, 'hy4');
+  assert.equal(workbuddyLabel.resolvedModel, 'hy4');
+  assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
+
+  const { input, cachedInput, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.ok(Math.abs(cost.totalUSD - (
+    input + cachedInput + output
+  ) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+});
+
 test('prices Hy4 Preview from official Tencent TokenHub rates', () => {
   const cost = calculateOfficialCost('Hy4 Preview', {
     input: 1_000_000,
