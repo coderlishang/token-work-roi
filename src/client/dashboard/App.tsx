@@ -654,9 +654,23 @@ function Dashboard({
 
   const dates = useMemo(() => U.rangeDates(filters.startDate, filters.endDate), [filters.startDate, filters.endDate]);
   const presentSources = useMemo(() => {
+    // 趋势图只画所选时间范围内实际有消耗的来源，全库出现过的零消耗来源不占系列
+    const rangeSources = new Set(filtered.map(r => r.source));
     const set = effectiveFilters.sources.size ? effectiveFilters.sources : new Set(allSources);
+    return Array.from(set).filter(s => rangeSources.has(s));
+  }, [effectiveFilters.sources, allSources, filtered]);
+
+  // 来源筛选 pills 只列所选日期范围内有消耗的来源；已勾选的来源始终保留，避免区间变化后无法取消勾选
+  const rangeSourceOptions = useMemo(() => {
+    const set = new Set();
+    for (const r of M.daily) {
+      if (r.usageDate >= filters.startDate && r.usageDate <= filters.endDate) set.add(r.source);
+    }
+    // 范围内暂无数据(如当天尚未采集)时回退全量来源，来源行不能空
+    if (!set.size) for (const r of M.daily) set.add(r.source);
+    for (const s of filters.sources) set.add(s);
     return Array.from(set);
-  }, [effectiveFilters.sources, allSources]);
+  }, [M.daily, filters.startDate, filters.endDate, filters.sources]);
 
   // ───── Comparison period ─────
   const compareData = useMemo(() => {
@@ -1035,7 +1049,7 @@ function Dashboard({
       <FilterBar
         f={filters}
         setF={setFilters}
-        allSources={allSources}
+        allSources={rangeSourceOptions}
         allDevices={allDevices}
         allModels={allModels}
         availableRange={availableRange}

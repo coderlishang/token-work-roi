@@ -174,11 +174,13 @@ function TrendChart({ rows, dates, sources, compareRows, compareDates, mode, onM
       extraCssText: 'box-shadow: 0 8px 24px rgba(15,23,42,0.10); border-radius: 10px;',
       formatter(params) {
         const date = params[0]?.axisValue || '';
+        // 工具来源只列当天实际用到的，零值来源不占位
+        const visible = params.filter(p => !sources.includes(p.seriesName) || (p.value || 0) > 0);
         let total = 0;
-        for (const p of params) if (sources.includes(p.seriesName)) total += p.value || 0;
+        for (const p of visible) if (sources.includes(p.seriesName)) total += p.value || 0;
         let html = `<div style="font-weight:600;margin-bottom:6px;color:oklch(0.40 0.005 80);font-size:11.5px;letter-spacing:.04em">${date}</div>`;
         html += `<div style="font-size:16px;font-weight:600;margin-bottom:8px">${U.compactCN(total)} <span style="font-size:11px;color:oklch(0.55 0.005 80);font-weight:500"> tokens</span></div>`;
-        for (const p of params) {
+        for (const p of visible) {
           html += `<div style="display:flex;align-items:center;gap:8px;margin-top:3px;font-size:12px">
             <span style="width:8px;height:8px;border-radius:2px;background:${p.color};display:inline-block"></span>
             <span style="color:oklch(0.45 0.005 80);flex:1">${p.seriesName}</span>
@@ -268,11 +270,12 @@ function TrendChart({ rows, dates, sources, compareRows, compareDates, mode, onM
 // Donut chart — source share
 // ───────────────────────────────────────────────────────────────
 function SourceDonut({ rows, sources, onFocusSource, focused }) {
+  // 只显示范围内有消耗的来源，零值来源不产生空切片与图例项
   const data = sources.map(src => {
     let v = 0;
     for (const r of rows) if (r.source === src) v += r.totalTokens;
     return { name: src, value: v, color: U.getSourceColor(src) };
-  }).sort((a, b) => b.value - a.value);
+  }).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
 
   const sum = data.reduce((s, d) => s + d.value, 0);
 

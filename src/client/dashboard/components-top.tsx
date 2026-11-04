@@ -220,9 +220,9 @@ function FilterBar({ f, setF, allSources, allDevices, allModels, availableRange,
             )}
           </div>
         </div>
+      </div>
 
-        <div className="divider"/>
-
+      <div className="filter-row">
         <div className="filter-group filter-group-sources">
           <span className="filter-label">来源</span>
           {allSources.map(s => (
