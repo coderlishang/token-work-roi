@@ -57,6 +57,9 @@ export function normalizeModelForGrouping(modelId, usageDate = null) {
     return applyConfiguredModelAlias('hy3', usageDate);
   }
 
+  // WorkBuddy logs hy4 usage as hy4-free; Tencent lists no free tier for hy4.
+  if (name === 'hy4-free') return applyConfiguredModelAlias('hy4', usageDate);
+
   // WorkBuddy recorded this release label for the Kimi K3 model. Keep the
   // canonical model name stable without treating later K3 variants as K3.
   if (name === 'kimi-k3-1') return applyConfiguredModelAlias('kimi-k3', usageDate);
