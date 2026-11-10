@@ -170,8 +170,10 @@ export function App({ routeMode = 'dashboard' }) {
     if (waitingForCollectionRef.current) return null;
     waitingForCollectionRef.current = true;
     try {
+      const canPoll = U.createPollGate(1500);
       for (;;) {
         await new Promise(resolve => setTimeout(resolve, 1500));
+        if (!canPoll()) continue;
         const data = await syncCollectStatus({ refreshOnDone: true, refreshCoverage });
         if (data.status !== 'running') return data;
       }
@@ -190,10 +192,10 @@ export function App({ routeMode = 'dashboard' }) {
         .catch(() => {});
     };
     inspectCollection();
-    const timer = setInterval(inspectCollection, 15_000);
+    const stopPolling = U.startVisiblePolling(inspectCollection, 15_000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stopPolling();
     };
   }, [syncCollectStatus, waitForCollectDone]);
 
