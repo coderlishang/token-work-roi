@@ -287,10 +287,10 @@ function TrendChart({ data }) {
       <path d={chart.tokenAreaPath} className="chart-token-area"/>
       <polyline points={chart.tokenPolyline} className="chart-token-line"/>
       <polyline points={chart.costPolyline} className="chart-cost-line"/>
-      {chart.labels.map(label => (
+      {chart.labels.map(label => label.tokenTurn && (
         <circle key={`token-dot-${label.index}`} cx={label.x} cy={label.tokenY} r="3.4" className="chart-point chart-point-token"/>
       ))}
-      {chart.labels.map(label => (
+      {chart.labels.map(label => label.costTurn && (
         <circle key={`cost-dot-${label.index}`} cx={label.x} cy={label.costY} r="2.8" className="chart-point chart-point-cost"/>
       ))}
     </svg>
@@ -449,13 +449,19 @@ function buildTrendChart(data) {
   const tokenAreaPath = `M ${firstX} ${top + innerHeight} L ${tokenPoints.join(' L ')} L ${lastX} ${top + innerHeight} Z`;
   const labelIndexes = trendPointLabelIndexes(rows);
   const xForIndex = index => left + (rows.length === 1 ? innerWidth : (index / (rows.length - 1)) * innerWidth);
-  const labels = labelIndexes.map(index => ({
-    index,
-    x: xForIndex(index),
-    tokenY: tokenCoords[index].y,
-    costY: costCoords[index].y,
-    text: formatChartTimeLabel(rows[index])
-  }));
+  const tokenTurns = turnFlags(tokenCoords);
+  const costTurns = turnFlags(costCoords);
+  const labels = labelIndexes
+    .filter(index => tokenTurns[index] || costTurns[index])
+    .map(index => ({
+      index,
+      x: xForIndex(index),
+      tokenY: tokenCoords[index].y,
+      costY: costCoords[index].y,
+      text: formatChartTimeLabel(rows[index]),
+      tokenTurn: tokenTurns[index],
+      costTurn: costTurns[index]
+    }));
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(ratio => ({
     y: top + innerHeight - ratio * innerHeight,
     tokens: formatCompactTokens(maxTokens * ratio),
@@ -479,6 +485,16 @@ function buildTrendChart(data) {
 
 function pointText(point) {
   return `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
+}
+
+// 转折点判定:两侧线段像素斜率差超过 0.5px 才算转折,首尾点保留;横轴节点和圆点都只画在转折点上
+function turnFlags(coords) {
+  return coords.map((point, index) => {
+    if (index === 0 || index === coords.length - 1) return true;
+    const before = point.y - coords[index - 1].y;
+    const after = coords[index + 1].y - point.y;
+    return Math.abs(before - after) > 0.5;
+  });
 }
 
 function trendPointLabelIndexes(rows) {
@@ -516,7 +532,7 @@ function trendPointLabelIndexes(rows) {
   }
 
   const picked = [0, lastIndex];
-  const maxLabels = Math.min(12, rows.length);
+  const maxLabels = Math.min(24, rows.length);
   const minGap = Math.max(1, Math.floor(lastIndex / maxLabels));
   for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
     if (picked.length >= maxLabels) break;
