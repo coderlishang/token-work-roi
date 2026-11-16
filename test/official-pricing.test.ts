@@ -706,6 +706,54 @@ test('prices Claude Fable 5.1 with the official cache read and write rates', () 
   assert.equal(fableHour.ratesPerMTok.cacheWrite, 20);
 });
 
+test('prices Claude Fable 5.2 and Mythos 5.2 at the official launch rates', () => {
+  const tokens = { input: 1_000_000, cacheRead: 1_000_000, cacheWrite: 1_000_000, output: 1_000_000 };
+  const fable = calculateOfficialCost('claude-fable-5.2', tokens);
+  const fableHour = calculateOfficialCost('claude-fable-5.2', {
+    cacheWrite: 1_000_000
+  }, { anthropicCacheWriteTtl: '1h' });
+  const mythos = calculateOfficialCost('claude-mythos-5.2', tokens);
+
+  assert.equal(fable.priced, true);
+  assert.equal(fable.resolvedModel, 'claude-fable-5.2');
+  assert.equal(fable.ratesPerMTok.input, 8);
+  assert.equal(fable.ratesPerMTok.cachedInput, 0.2);
+  assert.equal(fable.ratesPerMTok.cacheWrite, 10);
+  assert.equal(fable.ratesPerMTok.output, 40);
+  assert.equal(fableHour.ratesPerMTok.cacheWrite, 16);
+  assert.equal(mythos.priced, true);
+  assert.equal(mythos.provider, 'anthropic-mythos');
+  assert.equal(mythos.ratesPerMTok.cachedInput, 8);
+  assert.equal(mythos.ratesPerMTok.cacheWrite, 8);
+  assert.equal(mythos.ratesPerMTok.output, 40);
+});
+
+test('prices Gemini 4 Carbon through its introductory cutoff and Hydrogen at the flat rate', () => {
+  const tokens = { input: 1_000_000, output: 1_000_000 };
+  const intro = calculateOfficialCost('gemini-4-carbon', tokens, { usageDate: '2026-11-20' });
+  const standard = calculateOfficialCost('gemini-4-carbon', tokens, { usageDate: '2026-12-01' });
+  const hydrogen = calculateOfficialCost('gemini-4-hydrogen', tokens);
+
+  assert.equal(intro.ratesPerMTok.input, 2);
+  assert.equal(intro.ratesPerMTok.cachedInput, 0.1);
+  assert.equal(intro.ratesPerMTok.output, 10);
+  assert.equal(standard.ratesPerMTok.input, 4);
+  assert.equal(standard.ratesPerMTok.cachedInput, 0.2);
+  assert.equal(standard.ratesPerMTok.output, 20);
+  assert.equal(hydrogen.priced, true);
+  assert.equal(hydrogen.ratesPerMTok.input, 1.5);
+  assert.equal(hydrogen.ratesPerMTok.output, 7.5);
+});
+
+test('recognizes Seedream 5.5 without inventing token prices', () => {
+  const cost = calculateOfficialCost('doubao-seedream-5-5', { input: 1_000_000, output: 1_000_000 });
+
+  assert.equal(cost.priced, false);
+  assert.equal(cost.provider, 'DoubaoSeed');
+  assert.equal(cost.resolvedModel, 'doubao-seedream-5.5');
+  assert.equal(cost.totalUSD, 0);
+});
+
 test('prices Claude Mythos 5.1 without inventing cache discounts', () => {
   const cost = calculateOfficialCost('anthropic/claude-mythos-5.1', {
     input: 1_000_000,

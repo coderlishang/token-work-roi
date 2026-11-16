@@ -157,10 +157,10 @@ function startExchangeRateRefresh(onChange) {
     }
   }
   refresh();
-  const timer = window.setInterval(refresh, EXCHANGE_RATE_REFRESH_MS);
+  const stopPolling = startVisiblePolling(refresh, EXCHANGE_RATE_REFRESH_MS);
   return () => {
     stopped = true;
-    window.clearInterval(timer);
+    stopPolling();
   };
 }
 
@@ -372,12 +372,32 @@ function alpha(color, a) {
   return `color-mix(in oklab, ${color}, transparent ${100 - a * 100}%)`;
 }
 
+// 定时轮询守卫:页签隐藏时跳过;系统休眠会让区间计时停摆,唤醒后首个回调与上次的间隔远大于计划值,同样跳过
+function createPollGate(intervalMs) {
+  let lastTickAt = Date.now();
+  return () => {
+    const now = Date.now();
+    const wakeTick = now - lastTickAt > intervalMs + 60_000;
+    lastTickAt = now;
+    return document.visibilityState !== 'hidden' && !wakeTick;
+  };
+}
+
+function startVisiblePolling(poll, intervalMs) {
+  const gate = createPollGate(intervalMs);
+  const timer = window.setInterval(() => {
+    if (gate()) poll();
+  }, intervalMs);
+  return () => window.clearInterval(timer);
+}
+
 export const U = {
   PALETTE, PALETTE_FALLBACK, getSourceColor,
   LEGAL_NOTICE,
   fmt, fmtUS, fmtUS4, fmtCNY,
   money, money4, compactMoney,
   getExchangeRate, setExchangeRate, loadExchangeRate, startExchangeRateRefresh, exchangeRateLabel, exchangeRateSourceLabel,
+  createPollGate, startVisiblePolling,
   compact, compactCN, pct, deltaPct, formatTs,
   localDateStr, daysAgo, addDays, rangeDates,
   filterDaily, cacheHitRate, aggregateTotals, groupByDate, uniqueValues, withModelLabels,
