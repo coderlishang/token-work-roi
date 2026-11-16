@@ -100,6 +100,7 @@ const STABLE_ALIASES = new Map([
   ['tencent hunyuan::hy3', ['hy3', 'hy-3', 'hunyuan-hy3', 'hy3-x', 'hy3_x', 'hunyuan-hy3-x', 'hunyuan_hy3_x']],
   ['tencent hunyuan::hy4', ['hy4', 'hy-4', 'hunyuan-hy4', 'hunyuan-hy-4', 'hy4-free']],
   ['tencent hunyuan::hy4-preview', ['hy4-preview', 'hy-4-preview', 'hunyuan-hy4-preview', 'hunyuan-hy-4-preview']],
+  ['tencent hunyuan::hy4-flash', ['hy4-flash', 'hy-4-flash', 'hunyuan-hy4-flash', 'hunyuan-hy-4-flash']],
   ['kimi::kimi-k3-1-pro', ['kimi-k3.1-pro', 'kimi-k3-1-pro']],
   ['kimi::kimi-k3-1-pro-highspeed', ['kimi-k3.1-pro-highspeed', 'kimi-k3-1-pro-highspeed']]
 ]);
@@ -1123,7 +1124,8 @@ function parseTencentHunyuanModels(body, exchangeRate) {
   const models: Array<[string, RegExp]> = [
     ['hy3', /Hy3/i],
     ['hy4', /Hy4(?!\s*-?\s*Preview)/i],
-    ['hy4-preview', /Hy4\s*-?\s*Preview/i]
+    ['hy4-preview', /Hy4\s*-?\s*Preview/i],
+    ['hy4-flash', /Hy4\s*-?\s*Flash/i]
   ];
   return models.map(([model, label]) => {
     const match = text.match(new RegExp(
