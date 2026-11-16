@@ -200,9 +200,9 @@ export const OFFICIAL_PRICING_SOURCES = [
   },
   {
     provider: 'anthropic-mythos',
-    label: 'Claude Mythos 5.1 pricing',
+    label: 'Claude Mythos 5.2 pricing',
     url: 'https://www.anthropic.com/claude/mythos',
-    note: 'First-party Mythos 5.1 starting price; separate prompt-cache rates are not published.'
+    note: 'First-party Mythos 5.2 starting price; separate prompt-cache rates are not published.'
   },
   {
     provider: 'deepseek',
@@ -615,6 +615,18 @@ export const OFFICIAL_PRICE_TABLE = [
     note: "Claude Mythos 5.1 is limited to vetted trusted-access partners; separate prompt-cache rates are not published."
   }),
   officialRate({
+    provider: "anthropic-mythos",
+    model: "claude-mythos-5.2",
+    aliases: ["claude-mythos-5-2"],
+    input: 8,
+    cachedInput: 8,
+    cacheWrite5m: 8,
+    cacheWrite1h: 8,
+    output: 40,
+    source: "anthropic-mythos",
+    note: "Claude Mythos 5.2 starting price; separate prompt-cache rates are not published and Fast mode rates are not applied by default."
+  }),
+  officialRate({
     provider: "anthropic",
     model: "claude-fable-5",
     aliases: ["claude-fable-5"],
@@ -637,6 +649,18 @@ export const OFFICIAL_PRICE_TABLE = [
     output: 50,
     source: "anthropic",
     note: "First-party Claude Fable 5.1 pricing; cache write defaults to 5-minute prompt caching."
+  }),
+  officialRate({
+    provider: "anthropic",
+    model: "claude-fable-5.2",
+    aliases: ["claude-fable-5-2"],
+    input: 8,
+    cachedInput: 0.2,
+    cacheWrite5m: 10,
+    cacheWrite1h: 16,
+    output: 40,
+    source: "anthropic",
+    note: "First-party Claude Fable 5.2 pricing; cache write defaults to 5-minute prompt caching."
   }),
   officialRate({
     provider: "anthropic",
@@ -1268,6 +1292,14 @@ export const OFFICIAL_PRICE_TABLE = [
     note: "Official Ark pricing page. RMB prices are converted to USD for internal cost math."
   }),
   officialRate({
+    provider: "DoubaoSeed",
+    model: "doubao-seedream-5.5",
+    aliases: ["doubao-seedream-5-5"],
+    source: "DoubaoSeed",
+    unavailableReason: "Seedream 5.5 is billed per image, not per token; local usage records carry token counts only, so its cost is not calculated.",
+    note: "Official Volcengine Ark rate: 0.05 CNY per input image and 0.13 CNY (<=2.61M pixels) or 0.23 CNY (2.61M-4.63M pixels) per output image."
+  }),
+  officialRate({
     provider: "Gemini",
     model: "gemini-3.5-flash",
     aliases: ["gemini-3-5-flash"],
@@ -1429,6 +1461,31 @@ export const OFFICIAL_PRICE_TABLE = [
     output: 15,
     source: "Gemini",
     note: "Gemini API long-context rate for prompts over 200k tokens."
+  }),
+  officialRate({
+    provider: "Gemini",
+    model: "gemini-4-carbon",
+    aliases: ["gemini-4-carbon"],
+    input: 2,
+    cachedInput: 0.1,
+    cacheWrite5m: 2,
+    cacheWrite1h: 2,
+    output: 10,
+    rateSchedule: [{"from":null,"ratesPerMTok":{"input":2,"cachedInput":0.1,"cacheWrite5m":2,"cacheWrite1h":2,"output":10}},{"from":"2026-12-01","ratesPerMTok":{"input":4,"cachedInput":0.2,"cacheWrite5m":4,"cacheWrite1h":4,"output":20}}],
+    source: "Gemini",
+    note: "Gemini 4 Carbon introductory API rate through 2026-11-30; the standard rate applies from 2026-12-01. Official launch pricing puts cached input at 95% off input; the standard cached rate is derived from that ratio."
+  }),
+  officialRate({
+    provider: "Gemini",
+    model: "gemini-4-hydrogen",
+    aliases: ["gemini-4-hydrogen"],
+    input: 1.5,
+    cachedInput: 1.5,
+    cacheWrite5m: 1.5,
+    cacheWrite1h: 1.5,
+    output: 7.5,
+    source: "Gemini",
+    note: "Gemini API flat rate across the 1M-token context window. The launch announcement does not publish a cached-input rate, so no cache discount is applied."
   }),
   officialRate({
     provider: "Kimi",

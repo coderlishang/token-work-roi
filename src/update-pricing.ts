@@ -693,6 +693,7 @@ function parseAnthropicModels(body) {
   const opus55 = rates.find(rate => rate.label.includes('opus 5.5'));
   const fable5 = rates.find(rate => /fable\s+5(?![.-]\d)/.test(rate.label));
   const fable51 = rates.find(rate => rate.label.includes('fable 5.1'));
+  const fable52 = rates.find(rate => rate.label.includes('fable 5.2'));
   // 5.5 卡片不能给 sonnet 5 供价，须各自命中
   const sonnet5 = rates.find(rate => /sonnet\s+5(?![.-]\d)/.test(rate.label));
   const sonnet55 = rates.find(rate => rate.label.includes('sonnet 5.5'));
@@ -704,6 +705,7 @@ function parseAnthropicModels(body) {
   return [
     rateModel('anthropic', 'claude-fable-5', fable5, 'anthropic'),
     rateModel('anthropic', 'claude-fable-5.1', fable51, 'anthropic', 'official-page', null, 'First-party Claude Fable 5.1 pricing; cache write defaults to 5-minute prompt caching.'),
+    rateModel('anthropic', 'claude-fable-5.2', fable52, 'anthropic', 'official-page', null, 'First-party Claude Fable 5.2 pricing; cache write defaults to 5-minute prompt caching.'),
     rateModel('anthropic', 'claude-opus-5', opus5, 'anthropic'),
     rateModel('anthropic', 'claude-opus-5-5', opus55, 'anthropic'),
     ...['claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6'].map(model => rateModel('anthropic', model, opus, 'anthropic')),
@@ -720,17 +722,17 @@ function parseAnthropicModels(body) {
 function parseAnthropicMythosModels(body) {
   const text = tableText(body).replace(/\|/g, ' ').replace(/\s+/g, ' ');
   const match = text.match(
-    /Pricing for Claude Mythos 5\.1 starts at \s*\$\s*([0-9.]+) per million input tokens and \s*\$\s*([0-9.]+) per million output tokens/i
+    /Pricing for Claude Mythos 5\.2 starts at \s*\$\s*([0-9.]+) per million input tokens and \s*\$\s*([0-9.]+) per million output tokens/i
   );
   if (!match) return [];
   const input = Number(match[1]);
-  return [rateModel('anthropic', 'claude-mythos-5.1', {
+  return [rateModel('anthropic', 'claude-mythos-5.2', {
     input,
     cachedInput: input,
     cacheWrite5m: input,
     cacheWrite1h: input,
     output: Number(match[2])
-  }, 'anthropic-mythos', 'official-page', null, 'Claude Mythos 5.1 is limited to vetted trusted-access partners; separate prompt-cache rates are not published.')];
+  }, 'anthropic-mythos', 'official-page', null, 'Claude Mythos 5.2 starting price; separate prompt-cache rates are not published and Fast mode rates are not applied by default.')];
 }
 
 // xAI 模型卡：逐模型做名称与美元价双向校验，对不上的模型跳过，由 fallback 沿用内置价
@@ -960,6 +962,8 @@ function volcengineApiPrice(rows, chargeKind) {
 
 function parseGeminiModels(body) {
   const models = [
+    ['gemini-4-carbon', 'gemini-4-carbon', 0],
+    ['gemini-4-hydrogen', 'gemini-4-hydrogen', 0],
     ['gemini-3.8-flash', 'gemini-3.8-flash', 0],
     ['gemini-3.7-flash', 'gemini-3.7-flash', 0],
     ['gemini-3.6-flash', 'gemini-3.6-flash', 0],
