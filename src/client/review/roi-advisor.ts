@@ -7,7 +7,7 @@ const DEFAULT_WORK_PURPOSE = '未说明';
 const DEFAULT_WORK_STAGE = '未说明';
 const DEFAULT_VALUE_LEVEL = '未评估';
 
-const HEAVY_MODEL_PATTERNS = [/(?:^|[/:\s])gpt-6-astra(?:$|[-:])/i, /^gpt-6-sol/i, /^gpt-6[.-]1-sol/i, /^gpt-5\.6-sol/i, /^gpt-5\.5/i, /claude-(?:mythos|fable)/i, /claude-opus/i, /gemini-2\.5-pro-long-context/i];
+const HEAVY_MODEL_PATTERNS = [/(?:^|[/:\s])gpt-6-astra(?:$|[-:])/i, /(?:^|[/:\s])gpt-6[.-]2-astra(?:$|[-:])/i, /^gpt-6-sol/i, /^gpt-6[.-]1-sol/i, /^gpt-6[.-]2-sol/i, /^gpt-5\.6-sol/i, /^gpt-5\.5/i, /claude-(?:mythos|fable)/i, /claude-opus/i, /gemini-2\.5-pro-long-context/i];
 const MID_MODEL_PATTERNS = [/^gpt-5\.6-terra/i, /^gpt-6[.-]1-terra/i, /^grok-4[.-]5/i, /^gpt-5\.3-codex$/i, /claude-sonnet/i, /gemini-2\.5-pro/i, /kimi-k2[.-][67]/i, /kimi-k3[.-]1/i];
 const LIGHT_MODEL_PATTERNS = [/^gpt-5\.6-luna$/i, /^gpt-6-luna/i, /claude-haiku/i, /deepseek/i, /mimo/i, /gemini-2\.5-flash/i, /kimi-k2[.-]5/i];
 const EXPLORATION_PURPOSES = new Set(['测试验证', '上下文整理']);
@@ -146,7 +146,7 @@ function isLowCostSession(session, total) {
 function buildInputRatioSuggestion(sessions, daily) {
   const aggregate = aggregateRows(sessions.length ? sessions : daily);
   const ratio = aggregate.outputTokens ? aggregate.inputTokens / aggregate.outputTokens : 0;
-  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens);
+  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens, aggregate.cacheCreationTokens);
   if (ratio < 4 || aggregate.inputTokens < 100_000 || cacheRate >= HEALTHY_CACHE_HIT_RATE) return null;
   return suggestion({
     id: 'reduce-context-bloat',
@@ -164,7 +164,7 @@ function buildInputRatioSuggestion(sessions, daily) {
 
 function buildCacheSuggestion(sessions, daily) {
   const aggregate = aggregateRows(sessions.length ? sessions : daily);
-  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens);
+  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens, aggregate.cacheCreationTokens);
   if (cacheRate >= 10 || aggregate.inputTokens < 100_000) return null;
   return suggestion({
     id: 'improve-cache-and-task-continuity',
@@ -217,6 +217,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens: number;
+    cacheCreationTokens: number;
     totalTokens: number;
     costUSD: number;
   }>((acc, row) => {
@@ -224,6 +225,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     acc.inputTokens += row.inputTokens || 0;
     acc.outputTokens += row.outputTokens || 0;
     acc.cacheReadTokens += row.cacheReadTokens || 0;
+    acc.cacheCreationTokens += row.cacheCreationTokens || 0;
     acc.totalTokens += row.totalTokens || 0;
     acc.costUSD += row.costUSD || 0;
     return acc;
@@ -232,6 +234,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens: 0,
     costUSD: 0
   });

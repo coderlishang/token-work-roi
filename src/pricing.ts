@@ -187,6 +187,12 @@ export const OFFICIAL_PRICING_SOURCES = [
     note: 'GPT-6.1 Terra launch rates; cache write is 25% above input and cache read is 95% below input.'
   },
   {
+    provider: 'openai-gpt-6.2',
+    label: 'OpenAI GPT-6.2 Astra and Sol pricing',
+    url: 'https://openai.com/api/pricing/',
+    note: 'GPT-6.2 Astra and Sol standard API rates; cached input is 95% below input. Requests above 272k input tokens bill input at double and output at 1.5x.'
+  },
+  {
     provider: 'xai',
     label: 'xAI model pricing',
     url: 'https://docs.x.ai/developers/models',
@@ -332,6 +338,30 @@ export const OFFICIAL_PRICE_TABLE = [
     output: 0.5,
     source: "openai-gpt-6-sol-luna",
     note: "OpenAI GPT-6 Luna standard API rate. Cache write is input × 1.25; cached input is input × 0.1."
+  }),
+  officialRate({
+    provider: "openai",
+    model: "gpt-6.2-astra",
+    aliases: ["gpt-6-2-astra"],
+    input: 8,
+    cachedInput: 0.4,
+    cacheWrite5m: 10,
+    cacheWrite1h: 10,
+    output: 40,
+    source: "openai-gpt-6.2",
+    note: "OpenAI GPT-6.2 Astra standard API rate: $8 input, $0.40 cached input, $40 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
+  }),
+  officialRate({
+    provider: "openai",
+    model: "gpt-6.2-sol",
+    aliases: ["gpt-6-2-sol"],
+    input: 2,
+    cachedInput: 0.1,
+    cacheWrite5m: 2.5,
+    cacheWrite1h: 2.5,
+    output: 10,
+    source: "openai-gpt-6.2",
+    note: "OpenAI GPT-6.2 Sol standard API rate, unchanged from GPT-6.1 Sol: $2 input, $0.10 cached input, $10 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
   }),
   officialRate({
     provider: "openai",
@@ -968,6 +998,19 @@ export const OFFICIAL_PRICE_TABLE = [
     note: "Official Tencent TokenHub hy4-preview RMB rate converted to USD at the last verified refresh rate."
   }),
   officialRate({
+    provider: "Tencent Hunyuan",
+    model: "hy4-flash",
+    aliases: ["hy4-flash", "hy-4-flash", "hunyuan-hy4-flash", "hunyuan-hy-4-flash"],
+    input: 0.07485238361427428,
+    cachedInput: 0.0029940953445709716,
+    cacheWrite5m: 0.07485238361427428,
+    cacheWrite1h: 0.07485238361427428,
+    output: 0.2994095344570971,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":0.5,"output":2,"cachedInput":0.02,"cacheWrite5m":0.5,"cacheWrite1h":0.5},"exchangeRate":6.679814,"sourceUnit":"元 / 1M tokens"},
+    source: "Tencent Hunyuan",
+    note: "Official Tencent TokenHub hy4-flash catalog rate converted to USD at the last verified refresh rate. The limited-time 50% discount is not applied."
+  }),
+  officialRate({
     provider: "Zhipu GLM",
     model: "glm-5.3",
     aliases: ["glm-5-3"],
@@ -1298,6 +1341,32 @@ export const OFFICIAL_PRICE_TABLE = [
     source: "DoubaoSeed",
     unavailableReason: "Seedream 5.5 is billed per image, not per token; local usage records carry token counts only, so its cost is not calculated.",
     note: "Official Volcengine Ark rate: 0.05 CNY per input image and 0.13 CNY (<=2.61M pixels) or 0.23 CNY (2.61M-4.63M pixels) per output image."
+  }),
+  officialRate({
+    provider: "DoubaoSeed",
+    model: "doubao-seedance-2.5",
+    aliases: ["doubao-seedance-2-5"],
+    input: 10.4793337059984,
+    cachedInput: 10.4793337059984,
+    cacheWrite5m: 10.4793337059984,
+    cacheWrite1h: 10.4793337059984,
+    output: 10.4793337059984,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":70,"output":70,"cachedInput":70,"cacheWrite5m":70,"cacheWrite1h":70},"exchangeRate":6.679814,"sourceUnit":"元 / 1M tokens"},
+    source: "DoubaoSeed",
+    note: "Official Volcengine Ark online video-token rate for 480p/720p output without input video: 70 CNY per 1M tokens, charged at one rate over all video tokens. Local usage records carry token counts only, so the 1080p (77/46 CNY) and 4K (31/19 CNY) resolution tiers and the 480p/720p input-video tier (42 CNY) are not distinguished."
+  }),
+  officialRate({
+    provider: "DoubaoSeed",
+    model: "doubao-seedance-2.5-flash",
+    aliases: ["doubao-seedance-2-5-flash"],
+    input: 6.886419292513234,
+    cachedInput: 6.886419292513234,
+    cacheWrite5m: 6.886419292513234,
+    cacheWrite1h: 6.886419292513234,
+    output: 6.886419292513234,
+    officialRatesPerMTok: {"currency":"CNY","unit":"1M tokens","ratesPerMTok":{"input":46,"output":46,"cachedInput":46,"cacheWrite5m":46,"cacheWrite1h":46},"exchangeRate":6.679814,"sourceUnit":"元 / 1M tokens"},
+    source: "DoubaoSeed",
+    note: "Official Volcengine Ark online video-token rate for 480p/720p output without input video: 46 CNY per 1M tokens. The input-video rate is 28 CNY and is not distinguished because local usage records carry token counts only."
   }),
   officialRate({
     provider: "Gemini",

@@ -153,6 +153,29 @@ test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
   assert.equal(luna.totalUSD, 0.735);
 });
 
+test('calculates the official GPT-6.2 Astra and Sol API rates', () => {
+  const astra = calculateOfficialCost('gpt-6-2-astra', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  const sol = calculateOfficialCost('gpt-6.2-sol', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+
+  assert.equal(astra.priced, true);
+  assert.equal(astra.provider, 'openai');
+  assert.equal(astra.resolvedModel, 'gpt-6.2-astra');
+  assert.equal(astra.totalUSD, 58.4);
+  assert.equal(sol.priced, true);
+  assert.equal(sol.resolvedModel, 'gpt-6.2-sol');
+  assert.equal(sol.totalUSD, 14.6);
+});
+
 test('prices WorkBuddy space-bunny and Claude Sonnet 5.5', () => {
   const bunny = calculateOfficialCost('space-bunny', {
     input: 1_000_000,
@@ -391,6 +414,28 @@ test('prices Hy4 Preview from official Tencent TokenHub rates', () => {
   assert.equal(cost.priced, true);
   assert.equal(cost.provider, 'Tencent Hunyuan');
   assert.equal(cost.resolvedModel, 'hy4-preview');
+  assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
+
+  const { input, cachedInput, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.ok(Math.abs(cost.totalUSD - (
+    input + cachedInput + output
+  ) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
+});
+
+test('prices Hy4 flash from official Tencent TokenHub rates', () => {
+  const cost = calculateOfficialCost('hy4-flash', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000
+  });
+  const alias = calculateOfficialCost('hunyuan-hy-4-flash', { input: 1_000_000 });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'hy4-flash');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'Tencent Hunyuan');
+  assert.equal(cost.resolvedModel, 'hy4-flash');
+  assert.equal(alias.resolvedModel, 'hy4-flash');
   assert.equal(rate.officialRatesPerMTok.currency, 'CNY');
 
   const { input, cachedInput, output } = rate.officialRatesPerMTok.ratesPerMTok;
@@ -752,6 +797,29 @@ test('recognizes Seedream 5.5 without inventing token prices', () => {
   assert.equal(cost.provider, 'DoubaoSeed');
   assert.equal(cost.resolvedModel, 'doubao-seedream-5.5');
   assert.equal(cost.totalUSD, 0);
+});
+
+test('prices Seedance 2.5 at the 480p/720p no-input-video token rate', () => {
+  const cost = calculateOfficialCost('doubao-seedance-2.5', {
+    input: 1_000_000,
+    output: 1_000_000
+  });
+  const flash = calculateOfficialCost('doubao-seedance-2-5-flash', { output: 1_000_000 });
+  const rate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'doubao-seedance-2.5');
+  const flashRate = OFFICIAL_PRICE_TABLE.find(item => item.model === 'doubao-seedance-2.5-flash');
+
+  assert.ok(rate?.officialRatesPerMTok);
+  assert.ok(flashRate?.officialRatesPerMTok);
+  assert.equal(cost.priced, true);
+  assert.equal(cost.provider, 'DoubaoSeed');
+  assert.equal(cost.resolvedModel, 'doubao-seedance-2.5');
+  assert.equal(flash.resolvedModel, 'doubao-seedance-2.5-flash');
+  assert.equal(rate.officialRatesPerMTok.ratesPerMTok.input, 70);
+  assert.equal(rate.officialRatesPerMTok.ratesPerMTok.output, 70);
+  assert.equal(flashRate.officialRatesPerMTok.ratesPerMTok.input, 46);
+
+  const { input, output } = rate.officialRatesPerMTok.ratesPerMTok;
+  assert.ok(Math.abs(cost.totalUSD - (input + output) / rate.officialRatesPerMTok.exchangeRate) < 1e-12);
 });
 
 test('prices Claude Mythos 5.1 without inventing cache discounts', () => {

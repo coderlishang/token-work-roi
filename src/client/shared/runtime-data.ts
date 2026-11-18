@@ -9,7 +9,8 @@ export function cachedAppData() {
 
 export function loadAppData({ force = false } = {}) {
   if (!force && appData) return Promise.resolve(appData);
-  if (appDataRequest) return appDataRequest;
+  // force 时若有在途请求,等它落地后再发新的,避免复用采集完成前的旧响应
+  if (appDataRequest) return force ? appDataRequest.then(() => loadAppData({ force: true })) : appDataRequest;
 
   appDataRequest = fetch('/api/data')
     .then(response => {
@@ -34,7 +35,9 @@ export function loadLiveSnapshot(windowMinutes, { force = false } = {}) {
   if (!force && liveSnapshots.has(windowMinutes)) {
     return Promise.resolve(liveSnapshots.get(windowMinutes));
   }
-  if (liveRequests.has(windowMinutes)) return liveRequests.get(windowMinutes);
+  const inFlight = liveRequests.get(windowMinutes);
+  // force 时若有在途请求,等它落地后再发新的,避免把采集完成前的旧快照当刷新结果
+  if (inFlight) return force ? inFlight.then(() => loadLiveSnapshot(windowMinutes, { force: true })) : inFlight;
 
   const request = fetch(`/api/live?windowMinutes=${encodeURIComponent(windowMinutes)}`)
     .then(response => {

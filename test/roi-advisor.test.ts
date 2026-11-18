@@ -16,6 +16,10 @@ test('modelTier classifies heavy, mid, light and unpriced models', () => {
   assert.equal(modelTier('gpt-6-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-6.1-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-6-1-sol', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6.2-astra', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6-2-astra', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6.2-sol', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6-2-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-5.6-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-5.6-terra', 'priced'), 'mid');
   assert.equal(modelTier('gpt-6.1-terra', 'priced'), 'mid');
@@ -227,4 +231,32 @@ test('advisor does not treat high input/output with healthy cache reuse as conte
 
   assert.equal(suggestions.some(item => item.id === 'reduce-context-bloat'), false);
   assert.equal(suggestions.some(item => item.id === 'improve-cache-and-task-continuity'), false);
+});
+
+test('advisor counts cache creation in the cache hit denominator', () => {
+  const base = {
+    sessionId: 'cache-write-heavy',
+    model: 'gpt-5.6-sol',
+    taskType: '功能开发',
+    outputStatus: '已完成',
+    workPurpose: '功能开发',
+    workStage: '实现',
+    valueLevel: '中',
+    inputTokens: 100_000,
+    outputTokens: 1_000,
+    cacheReadTokens: 12_000,
+    costUSD: 1,
+    pricingStatus: 'priced'
+  };
+
+  // 大量 cache 写入应拉低命中率并触发建议(旧算法分母漏掉 cacheCreation 时不会触发)
+  const withCreation = buildRoiAdvisor({
+    sessions: [{ ...base, cacheCreationTokens: 100_000, totalTokens: 213_000 }]
+  });
+  assert.equal(withCreation.some(item => item.id === 'improve-cache-and-task-continuity'), true);
+
+  const withoutCreation = buildRoiAdvisor({
+    sessions: [{ ...base, cacheCreationTokens: 0, totalTokens: 113_000 }]
+  });
+  assert.equal(withoutCreation.some(item => item.id === 'improve-cache-and-task-continuity'), false);
 });
