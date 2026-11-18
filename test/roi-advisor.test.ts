@@ -16,6 +16,10 @@ test('modelTier classifies heavy, mid, light and unpriced models', () => {
   assert.equal(modelTier('gpt-6-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-6.1-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-6-1-sol', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6.2-astra', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6-2-astra', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6.2-sol', 'priced'), 'heavy');
+  assert.equal(modelTier('gpt-6-2-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-5.6-sol', 'priced'), 'heavy');
   assert.equal(modelTier('gpt-5.6-terra', 'priced'), 'mid');
   assert.equal(modelTier('gpt-6.1-terra', 'priced'), 'mid');

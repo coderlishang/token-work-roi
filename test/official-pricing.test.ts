@@ -153,6 +153,29 @@ test('recognizes refreshed OpenAI GPT-6 Sol family models and aliases', () => {
   assert.equal(luna.totalUSD, 0.735);
 });
 
+test('calculates the official GPT-6.2 Astra and Sol API rates', () => {
+  const astra = calculateOfficialCost('gpt-6-2-astra', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+  const sol = calculateOfficialCost('gpt-6.2-sol', {
+    input: 1_000_000,
+    cacheRead: 1_000_000,
+    cacheWrite: 1_000_000,
+    output: 1_000_000
+  });
+
+  assert.equal(astra.priced, true);
+  assert.equal(astra.provider, 'openai');
+  assert.equal(astra.resolvedModel, 'gpt-6.2-astra');
+  assert.equal(astra.totalUSD, 58.4);
+  assert.equal(sol.priced, true);
+  assert.equal(sol.resolvedModel, 'gpt-6.2-sol');
+  assert.equal(sol.totalUSD, 14.6);
+});
+
 test('prices WorkBuddy space-bunny and Claude Sonnet 5.5', () => {
   const bunny = calculateOfficialCost('space-bunny', {
     input: 1_000_000,

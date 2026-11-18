@@ -397,6 +397,48 @@
     },
     {
       "provider": "openai",
+      "model": "gpt-6.2-astra",
+      "aliases": [
+        "gpt-6-2-astra"
+      ],
+      "priced": true,
+      "unavailableReason": null,
+      "ratesPerMTok": {
+        "input": 8,
+        "cachedInput": 0.4,
+        "cacheWrite5m": 10,
+        "cacheWrite1h": 10,
+        "output": 40
+      },
+      "officialRatesPerMTok": null,
+      "rateSchedule": null,
+      "sourceProvider": "openai-gpt-6.2",
+      "pricingFetchStatus": "fallback-table",
+      "note": "OpenAI GPT-6.2 Astra standard API rate: $8 input, $0.40 cached input, $40 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6.2-sol",
+      "aliases": [
+        "gpt-6-2-sol"
+      ],
+      "priced": true,
+      "unavailableReason": null,
+      "ratesPerMTok": {
+        "input": 2,
+        "cachedInput": 0.1,
+        "cacheWrite5m": 2.5,
+        "cacheWrite1h": 2.5,
+        "output": 10
+      },
+      "officialRatesPerMTok": null,
+      "rateSchedule": null,
+      "sourceProvider": "openai-gpt-6.2",
+      "pricingFetchStatus": "fallback-table",
+      "note": "OpenAI GPT-6.2 Sol standard API rate, unchanged from GPT-6.1 Sol: $2 input, $0.10 cached input, $10 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
+    },
+    {
+      "provider": "openai",
       "model": "gpt-5.6-sol",
       "aliases": [
         "gpt-5-6-sol"

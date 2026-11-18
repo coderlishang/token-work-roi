@@ -187,6 +187,12 @@ export const OFFICIAL_PRICING_SOURCES = [
     note: 'GPT-6.1 Terra launch rates; cache write is 25% above input and cache read is 95% below input.'
   },
   {
+    provider: 'openai-gpt-6.2',
+    label: 'OpenAI GPT-6.2 Astra and Sol pricing',
+    url: 'https://openai.com/api/pricing/',
+    note: 'GPT-6.2 Astra and Sol standard API rates; cached input is 95% below input. Requests above 272k input tokens bill input at double and output at 1.5x.'
+  },
+  {
     provider: 'xai',
     label: 'xAI model pricing',
     url: 'https://docs.x.ai/developers/models',
@@ -332,6 +338,30 @@ export const OFFICIAL_PRICE_TABLE = [
     output: 0.5,
     source: "openai-gpt-6-sol-luna",
     note: "OpenAI GPT-6 Luna standard API rate. Cache write is input × 1.25; cached input is input × 0.1."
+  }),
+  officialRate({
+    provider: "openai",
+    model: "gpt-6.2-astra",
+    aliases: ["gpt-6-2-astra"],
+    input: 8,
+    cachedInput: 0.4,
+    cacheWrite5m: 10,
+    cacheWrite1h: 10,
+    output: 40,
+    source: "openai-gpt-6.2",
+    note: "OpenAI GPT-6.2 Astra standard API rate: $8 input, $0.40 cached input, $40 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
+  }),
+  officialRate({
+    provider: "openai",
+    model: "gpt-6.2-sol",
+    aliases: ["gpt-6-2-sol"],
+    input: 2,
+    cachedInput: 0.1,
+    cacheWrite5m: 2.5,
+    cacheWrite1h: 2.5,
+    output: 10,
+    source: "openai-gpt-6.2",
+    note: "OpenAI GPT-6.2 Sol standard API rate, unchanged from GPT-6.1 Sol: $2 input, $0.10 cached input, $10 output per 1M tokens. Cache write is not published separately and is charged here at input × 1.25. Requests above 272k input tokens bill input at 2× and output at 1.5×, which aggregated usage records cannot distinguish."
   }),
   officialRate({
     provider: "openai",
