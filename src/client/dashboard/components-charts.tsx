@@ -77,7 +77,8 @@ function TrendChart({ rows, dates, sources, compareRows, compareDates, mode, onM
   // Trend rolling-avg (7-day) for line mode
   const rolling = (() => {
     const arr = [];
-    const win = Math.min(7, Math.max(2, Math.floor(dates.length / 8)));
+    // 窗口固定 7 天与标签一致;该系列只在 dates.length > 10 时渲染
+    const win = Math.min(7, dates.length);
     for (let i = 0; i < totalByDate.length; i++) {
       let sum = 0, count = 0;
       for (let j = Math.max(0, i - win + 1); j <= i; j++) { sum += totalByDate[j]; count++; }
@@ -604,33 +605,31 @@ function Gauge({ rate, cacheRead, cacheCreation, prevRate }) {
 // ───────────────────────────────────────────────────────────────
 // Growth stats panel — WoW / DoD
 // ───────────────────────────────────────────────────────────────
-function GrowthPanel({ totalsByDay }) {
-  const days = Array.from(totalsByDay.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  const values = days.map(d => d[1]);
-  const n = values.length;
+function GrowthPanel({ totalsByDay, dates }) {
+  // 环比按日历窗口对齐:锚点是筛选周期末日,而非最后一天有用量的日期
+  const anchor = dates[dates.length - 1] || U.daysAgo(0);
+  const valueOn = day => totalsByDay.get(day) || 0;
+  const windowSum = (endDay, days) => {
+    let sum = 0;
+    for (let i = 0; i < days; i += 1) sum += valueOn(U.addDays(endDay, -i));
+    return sum;
+  };
 
-  const today    = values[n - 1] || 0;
-  const yest     = values[n - 2] || 0;
-  const dod = U.deltaPct(today, yest);
+  const today = valueOn(anchor);
+  const dod = U.deltaPct(today, valueOn(U.addDays(anchor, -1)));
+  const last7 = windowSum(anchor, 7);
+  const wow = U.deltaPct(last7, windowSum(U.addDays(anchor, -7), 7));
+  const last30 = windowSum(anchor, 30);
+  const mom = U.deltaPct(last30, windowSum(U.addDays(anchor, -30), 30));
 
-  // last 7 vs prev 7
-  const last7 = values.slice(-7).reduce((s, v) => s + v, 0);
-  const prev7 = values.slice(-14, -7).reduce((s, v) => s + v, 0);
-  const wow = U.deltaPct(last7, prev7);
+  let bestDate = null;
+  let bestVal = 0;
+  for (const day of dates) {
+    const v = valueOn(day);
+    if (v > bestVal) { bestVal = v; bestDate = day; }
+  }
 
-  // last 30 vs prev 30
-  const last30 = values.slice(-30).reduce((s, v) => s + v, 0);
-  const prev30 = values.slice(-60, -30).reduce((s, v) => s + v, 0);
-  const mom = U.deltaPct(last30, prev30);
-
-  // best day
-  let bestIdx = 0;
-  values.forEach((v, i) => { if (v > values[bestIdx]) bestIdx = i; });
-  const bestDate = days[bestIdx]?.[0];
-  const bestVal  = values[bestIdx];
-
-  // average daily
-  const avg = n ? Math.round(values.reduce((s, v) => s + v, 0) / n) : 0;
+  const avg = dates.length ? Math.round(dates.reduce((s, d) => s + valueOn(d), 0) / dates.length) : 0;
 
   return (
     <div className="panel">
@@ -641,7 +640,7 @@ function GrowthPanel({ totalsByDay }) {
         </div>
       </div>
       <div style={{display: 'flex', flexDirection: 'column', gap: 8}}>
-        <GrowthStat label="日环比 DoD" value={dod} sub={`今日 ${U.compactCN(today)}`}/>
+        <GrowthStat label="日环比 DoD" value={dod} sub={`当日 ${U.compactCN(today)}`}/>
         <GrowthStat label="周环比 WoW" value={wow} sub={`7 日 ${U.compactCN(last7)}`}/>
         <GrowthStat label="月环比 MoM" value={mom} sub={`30 日 ${U.compactCN(last30)}`}/>
         <GrowthStat label="日均"       value={null} sub={U.compactCN(avg)} subUnit="tokens / day"/>
@@ -652,7 +651,7 @@ function GrowthPanel({ totalsByDay }) {
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{color: 'var(--c-amber)'}}>
           <path d="M7 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L7 9.7l-3.2 1.7.6-3.6L1.8 5.3l3.6-.5L7 1.5z" fill="currentColor" opacity="0.85"/>
         </svg>
-        <span>峰值 <b style={{fontWeight:600}}>{bestDate}</b> · {U.compactCN(bestVal)} tokens</span>
+        <span>峰值 {bestDate ? <><b style={{fontWeight:600}}>{bestDate}</b> · {U.compactCN(bestVal)} tokens</> : '—'}</span>
       </div>
     </div>
   );

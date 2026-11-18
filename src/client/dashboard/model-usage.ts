@@ -8,6 +8,7 @@ interface DashboardFilters {
   endDate?: string;
   startDateTime?: string;
   endDateTime?: string;
+  rangeId?: string;
 }
 
 export function sessionModel(session: UsageRow = {}) {
@@ -27,7 +28,11 @@ export function filterSessionsByDashboardFilters(sessions: UsageRow[] = [], filt
     const lastActivity = session.lastActivity || '';
     const lastActivityTime = normalizeDateTime(lastActivity);
     const model = sessionModel(session);
-    return (!lastActivity || inDateRange(lastActivity, startDate, endDate) && inDateTimeRange(lastActivityTime, startDateTime, endDateTime))
+    // 无时间行的全期聚合会话只在「全部」区间出现,否则每次选日期都会被算进当期
+    const inRange = lastActivity
+      ? inDateRange(lastActivity, startDate, endDate) && inDateTimeRange(lastActivityTime, startDateTime, endDateTime)
+      : filters.rangeId === 'all';
+    return inRange
       && (sources.size === 0 || sources.has(session.source))
       && (devices.size === 0 || devices.has(session.device))
       && (models.size === 0 || models.has(model));

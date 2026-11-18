@@ -383,9 +383,10 @@ function TablePanel({
     { field: 'source', title: '来源', render: r => (
       <span className="tag"><span className="tag-dot" style={{background: U.getSourceColor(r.source)}}/>{r.source}</span>
     ), width: 130 },
-    { field: 'model', title: '模型', render: r => (
-      r.model ? <span className="mono">{r.model}</span> : <span className="muted">—</span>
-    ), width: 150 },
+    { field: 'model', title: '模型', render: r => {
+      const model = r.modelLabel || r.model;
+      return model ? <span className="mono">{model}</span> : <span className="muted">—</span>;
+    }, width: 150 },
     { field: 'projectLabel', title: '项目', value: sessionProjectLabel, render: r => {
       const raw = safeProjectPathLabel(r.projectPath) || safeProjectPathLabel(r.sessionId) || '—';
       return (
@@ -1471,7 +1472,7 @@ function DrillDrawer({ drill, daily, onClose }) {
                     <div className="detail-section">
                       <h4>元数据</h4>
                       <div className="detail-row"><span className="k">项目别名</span><span className="v">{detail.row.projectAlias || '—'}</span></div>
-                      <div className="detail-row"><span className="k">模型</span><span className="v mono">{detail.row.model || '—'}</span></div>
+                      <div className="detail-row"><span className="k">模型</span><span className="v mono">{detail.row.modelLabel || detail.row.model || '—'}</span></div>
                       <div className="detail-row"><span className="k">任务类型</span><span className="v">{detail.row.taskType || '未分类'}</span></div>
                       <div className="detail-row"><span className="k">产出状态</span><span className="v">{detail.row.outputStatus || '未标注'}</span></div>
                       <div className="detail-row"><span className="k">主要目的</span><span className="v">{detail.row.workPurpose || '未说明'}</span></div>

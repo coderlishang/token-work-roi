@@ -146,7 +146,7 @@ function isLowCostSession(session, total) {
 function buildInputRatioSuggestion(sessions, daily) {
   const aggregate = aggregateRows(sessions.length ? sessions : daily);
   const ratio = aggregate.outputTokens ? aggregate.inputTokens / aggregate.outputTokens : 0;
-  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens);
+  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens, aggregate.cacheCreationTokens);
   if (ratio < 4 || aggregate.inputTokens < 100_000 || cacheRate >= HEALTHY_CACHE_HIT_RATE) return null;
   return suggestion({
     id: 'reduce-context-bloat',
@@ -164,7 +164,7 @@ function buildInputRatioSuggestion(sessions, daily) {
 
 function buildCacheSuggestion(sessions, daily) {
   const aggregate = aggregateRows(sessions.length ? sessions : daily);
-  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens);
+  const cacheRate = U.cacheHitRate(aggregate.inputTokens, aggregate.cacheReadTokens, aggregate.cacheCreationTokens);
   if (cacheRate >= 10 || aggregate.inputTokens < 100_000) return null;
   return suggestion({
     id: 'improve-cache-and-task-continuity',
@@ -217,6 +217,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     inputTokens: number;
     outputTokens: number;
     cacheReadTokens: number;
+    cacheCreationTokens: number;
     totalTokens: number;
     costUSD: number;
   }>((acc, row) => {
@@ -224,6 +225,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     acc.inputTokens += row.inputTokens || 0;
     acc.outputTokens += row.outputTokens || 0;
     acc.cacheReadTokens += row.cacheReadTokens || 0;
+    acc.cacheCreationTokens += row.cacheCreationTokens || 0;
     acc.totalTokens += row.totalTokens || 0;
     acc.costUSD += row.costUSD || 0;
     return acc;
@@ -232,6 +234,7 @@ function aggregateRows(rows: UsageRow[] = []) {
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
+    cacheCreationTokens: 0,
     totalTokens: 0,
     costUSD: 0
   });

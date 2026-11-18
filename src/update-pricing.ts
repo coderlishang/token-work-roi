@@ -104,6 +104,18 @@ const STABLE_ALIASES = new Map([
   ['kimi::kimi-k3-1-pro', ['kimi-k3.1-pro', 'kimi-k3-1-pro']],
   ['kimi::kimi-k3-1-pro-highspeed', ['kimi-k3.1-pro-highspeed', 'kimi-k3-1-pro-highspeed']]
 ]);
+// xAI 模型卡：逐模型做名称与美元价双向校验，对不上的模型跳过，由 fallback 沿用内置价
+// 顶层 await 抓取期间就会进解析器，本常量必须声明在抓取之前，否则解析时处于 TDZ
+const XAI_MODEL_SPECS = [
+  { model: 'grok-4.5', label: /grok[\s-]*4\.5/, input: 2, cachedInput: 0.3, output: 6, note: 'xAI Grok 4.5 public model page lists input and output rates; cached-input rate verified against the official models page.' },
+  { model: 'grok-4.6', label: /grok[\s-]*4\.6/, input: 2, cachedInput: 0.5, output: 6, note: 'xAI Grok 4.6 public model page rate; cached input is input × 0.25.' },
+  { model: 'grok-4.3', label: /grok[\s-]*4\.3/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.3 public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-non-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}non-reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 non-reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-4.20-0309-multi-agent-0309', label: /grok[\s-]*4\.20[\s\S]{0,60}multi-agent/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 multi-agent (0309 release) public model page rate; cached input is input × 0.1.' },
+  { model: 'grok-build-0.1', label: /grok[\s-]*build/, input: 1, cachedInput: 0.2, output: 2, note: 'xAI Grok Build public model page rate; cached input is input × 0.1.' }
+];
+
 const fetchedAt = new Date().toISOString();
 const previousModels = await readPreviousPricingModels(pricingCachePath);
 const exchangeRate = await getUsdCnyExchangeRate();
@@ -736,17 +748,6 @@ function parseAnthropicMythosModels(body) {
   }, 'anthropic-mythos', 'official-page', null, 'Claude Mythos 5.2 starting price; separate prompt-cache rates are not published and Fast mode rates are not applied by default.')];
 }
 
-// xAI 模型卡：逐模型做名称与美元价双向校验，对不上的模型跳过，由 fallback 沿用内置价
-const XAI_MODEL_SPECS = [
-  { model: 'grok-4.5', label: /grok[\s-]*4\.5/, input: 2, cachedInput: 0.3, output: 6, note: 'xAI Grok 4.5 public model page lists input and output rates; cached-input rate verified against the official models page.' },
-  { model: 'grok-4.6', label: /grok[\s-]*4\.6/, input: 2, cachedInput: 0.5, output: 6, note: 'xAI Grok 4.6 public model page rate; cached input is input × 0.25.' },
-  { model: 'grok-4.3', label: /grok[\s-]*4\.3/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.3 public model page rate; cached input is input × 0.1.' },
-  { model: 'grok-4.20-0309-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
-  { model: 'grok-4.20-0309-non-reasoning', label: /grok[\s-]*4\.20[\s\S]{0,60}non-reasoning/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 non-reasoning (0309 release) public model page rate; cached input is input × 0.1.' },
-  { model: 'grok-4.20-0309-multi-agent-0309', label: /grok[\s-]*4\.20[\s\S]{0,60}multi-agent/, input: 1.25, cachedInput: 0.2, output: 2.5, note: 'xAI Grok 4.20 multi-agent (0309 release) public model page rate; cached input is input × 0.1.' },
-  { model: 'grok-build-0.1', label: /grok[\s-]*build/, input: 1, cachedInput: 0.2, output: 2, note: 'xAI Grok Build public model page rate; cached input is input × 0.1.' }
-];
-
 function parseXaiModels(body) {
   const text = tableText(body).toLowerCase();
   if (!XAI_MODEL_SPECS.some(({ label }) => label.test(text))) return [];
@@ -1143,7 +1144,7 @@ function parseTencentHunyuanModels(body, exchangeRate) {
       ratesPerMTok: cnyRates,
       exchangeRate: exchangeRate.rate,
       sourceUnit: '元 / 1M tokens'
-    }, `Official Tencent TokenHub ${model} RMB rate converted to USD at the last verified refresh rate.`);
+    }, `Official Tencent TokenHub ${model} RMB rate converted to USD at the last verified refresh rate.${model === 'hy4-flash' ? ' The limited-time 50% discount is not applied.' : ''}`);
   }).filter(Boolean);
 }
 

@@ -692,6 +692,15 @@ function Dashboard({
     return m;
   }, [filtered]);
 
+  // 环比卡片需要周期前的日历数据,只套来源/设备/模型过滤;用范围过滤会让上一期恒为空
+  const growthTotalsByDay = useMemo(() => {
+    const m = new Map();
+    for (const r of U.filterDaily(M.daily, { ...effectiveFilters, startDate: '', endDate: '9999-12-31' })) {
+      m.set(r.usageDate, (m.get(r.usageDate) || 0) + r.totalTokens);
+    }
+    return m;
+  }, [effectiveFilters, M.daily]);
+
   const sparkValues = useMemo(() => dates.map(d => dailyTotalsByDay.get(d) || 0), [dates, dailyTotalsByDay]);
 
   const sparkBy = useMemo(() => (key) => {
@@ -1001,7 +1010,7 @@ function Dashboard({
             prevRate={compareData.totals?.cacheHitRate} />
         </div>
         <div className="col-3">
-          <GrowthPanel totalsByDay={dailyTotalsByDay} />
+          <GrowthPanel totalsByDay={growthTotalsByDay} dates={dates} />
         </div>
       </div>
 
@@ -1219,7 +1228,7 @@ function Dashboard({
         </div>
       </div>
 
-      <DrillDrawer drill={drill} daily={M.daily} onClose={() => setDrill(null)} />
+      <DrillDrawer drill={drill} daily={filtered} onClose={() => setDrill(null)} />
       {quickAttributionOpen && (
         <BatchAnnotationModal
           count={unattributedSessions.length}

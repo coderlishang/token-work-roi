@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildEfficiencyGuidance } from '../src/client/review/efficiency-guidance.ts';
 import { buildEvidenceZeroState, buildSavingsEmptyReason } from '../src/client/review/review-empty-states.ts';
 import { buildReviewTrustState } from '../src/client/review/review-trust.ts';
+import { RU } from '../src/client/review/utils.ts';
 
 test('review trust state labels verified event-level data as real', () => {
   const state = buildReviewTrustState({
@@ -99,4 +100,11 @@ test('efficiency guidance covers cache, input/output and missing reasoning range
     hasReasoningTokens: true
   });
   assert.equal(highReuseInput.io.label, '缓存复用良好');
+});
+
+test('sessions without lastActivity only join the all period', () => {
+  const stub = { sessionId: 'stub', source: 'Codex CLI', lastActivity: null, totalTokens: 5 };
+  const period = { id: '7d', start: '2026-11-12', end: '2026-11-18', startDateTime: '', endDateTime: '' };
+  assert.deepEqual(RU.filterSessionsByPeriod([stub], period), []);
+  assert.equal(RU.filterSessionsByPeriod([stub], { ...period, id: 'all' }).length, 1);
 });

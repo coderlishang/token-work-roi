@@ -99,6 +99,19 @@ test('buildModelUsageRows aggregates token cost and session counts by model', ()
   assert.equal(byModel['gpt-5.3-codex'].sessionCount, 1);
 });
 
+test('sessions without lastActivity only appear in the all range', () => {
+  const stub = {
+    device: 'devbox', source: 'ZCode', sessionId: 'stub',
+    model: 'glm-5.3', lastActivity: null, totalTokens: 0
+  };
+  const filters = {
+    startDate: '2026-06-09', endDate: '2026-06-10',
+    sources: new Set(), devices: new Set(), models: new Set()
+  };
+  assert.deepEqual(filterSessionsByDashboardFilters([stub], { ...filters, rangeId: 'today' }), []);
+  assert.equal(filterSessionsByDashboardFilters([stub], { ...filters, rangeId: 'all' }).length, 1);
+});
+
 test('money4 keeps ordinary amounts compact and shows tiny priced amounts', () => {
   assert.equal(U.money4(114.2414), '$114.24 / ¥822.54');
   assert.equal(U.money4(0.0005389338907760648), '$0.0005 / ¥0.0039');

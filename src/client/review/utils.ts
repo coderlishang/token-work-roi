@@ -122,7 +122,8 @@ function filterSessionsByPeriod(sessions, period) {
   const start = period.id === 'custom' ? period.startDateTime : `${period.start}T00:00`;
   const end = period.id === 'custom' ? period.endDateTime : `${period.end}T23:59`;
   return sessions.filter(session => {
-    if (!session.lastActivity) return true;
+    // 无时间行的全期聚合会话只在「全部」周期出现,否则每个周期都会被算进当期
+    if (!session.lastActivity) return period.id === 'all';
     const activity = chinaDateTime(session.lastActivity);
     return activity >= start && activity <= end;
   });
