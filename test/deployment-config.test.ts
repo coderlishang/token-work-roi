@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
+const requireFromRoot = createRequire(import.meta.url);
 
 test('Dockerfile matches package runtime and only copies existing paths', () => {
   const dockerfile = readFileSync(resolve(root, 'Dockerfile'), 'utf8');
@@ -119,4 +121,21 @@ test('.dockerignore excludes private runtime data from build context', () => {
   assert.match(ignore, /^node_modules$/m);
   assert.match(ignore, /^dist$/m);
   assert.match(ignore, /^dist-runtime$/m);
+});
+
+test('vendored picomatch keeps the CVE-2026-112366 backport', () => {
+  const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.workspaces, ['vendor/picomatch']);
+
+  const picomatch = requireFromRoot('picomatch');
+  assert.equal(requireFromRoot('picomatch/package.json').version, '4.0.8');
+
+  // 单个分支的重复 extglob 不应再生成嵌套量词
+  for (const pattern of ['+(*)', '+(*a)', '*(*a)', '+(a*b)', '*(*.js)']) {
+    assert.doesNotMatch(picomatch.makeRe(pattern).source, /\)[+*]/, pattern);
+  }
+
+  const started = Date.now();
+  assert.equal(picomatch.isMatch('a'.repeat(60) + 'b', '+(*a)'), false);
+  assert.ok(Date.now() - started < 200, 'repeated extglob must not backtrack for seconds');
 });
