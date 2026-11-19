@@ -1,0 +1,15 @@
+{
+  "name": "picomatch",
+  "version": "4.0.8",
+  "description": "picomatch 4.0.7 with the CVE-2026-112366 ReDoS backport from micromatch/picomatch#237",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "posix.js",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=12"
+  }
+}
